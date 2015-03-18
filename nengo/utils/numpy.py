@@ -65,6 +65,16 @@ def array_hash(a, n=100):
         return hash(v.data if PY2 else v.data.tobytes())
 
 
+def array_offset(x):
+    """Get offset of array data from base data in bytes"""
+    if x.base is None:
+        return 0
+
+    base_start = x.base.__array_interface__['data'][0]
+    start = x.__array_interface__['data'][0]
+    return start - base_start
+
+
 def expm(A, n_factors=None, normalize=False):
     """Simple matrix exponential to replace Scipy's matrix exponential
 
