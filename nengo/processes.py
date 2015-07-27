@@ -16,19 +16,34 @@ class Process(FrozenObject):
     Attributes
     ----------
     default_size_out : int
-        If `d` isn't specified in `run` or `run_steps`, this will be used.
+        Sets the default size out for nodes running this process. Also,
+        if `d` isn't specified in `run` or `run_steps`, this will be used.
         Default: 1.
     default_dt : float
         If `dt` isn't specified in `run`, `run_steps`, `ntrange`, or `trange`,
         this will be used. Default: 0.001 (1 millisecond).
+    seed : int, optional
+        Random number seed. Ensures noise will be the same each run.
     """
     default_size_out = IntParam(low=0)
     default_dt = NumberParam(low=0, low_open=True)
+    seed = IntParam(low=0, high=npext.maxint, optional=True)
 
-    def __init__(self):
+    def __init__(self, seed=None):
         super(Process, self).__init__()
         self.default_size_out = 1
         self.default_dt = 0.001
+        self.seed = seed
+
+    def get_rng(self, default_rng=None):
+        return (default_rng if self.seed is None else
+                np.random.RandomState(self.seed))
+
+    def get_sim_rng(self, default_rng=None):
+        # use a separate RNG for simulation, for step order independence
+        seed = (default_rng.randint(npext.maxint)
+                if self.seed is None else self.seed)
+        return np.random.RandomState(seed)
 
     def make_step(self, size_in, size_out, dt, rng):
         raise NotImplementedError("Process must implement `make_step` method.")
@@ -72,6 +87,8 @@ class WhiteNoise(Process):
         noise requires using a time constant of `sqrt(dt)` instead of `dt`
         on the noise term [1]_, to ensure the magnitude of the integrated
         noise does not change with `dt`. Defaults to True.
+    seed : int, optional
+        Random number seed. Ensures noise will be the same each run.
 
     References
     ----------
@@ -82,8 +99,8 @@ class WhiteNoise(Process):
     dist = DistributionParam()
     scale = BoolParam()
 
-    def __init__(self, dist=Gaussian(mean=0, std=1), scale=True):
-        super(WhiteNoise, self).__init__()
+    def __init__(self, dist=Gaussian(mean=0, std=1), scale=True, seed=None):
+        super(WhiteNoise, self).__init__(seed=seed)
         self.dist = dist
         self.scale = scale
 
@@ -99,9 +116,7 @@ class WhiteNoise(Process):
         alpha = 1. / np.sqrt(dt)
         # ^ need sqrt(dt) when integrating, so divide by sqrt(dt) here,
         #   since dt / sqrt(dt) = sqrt(dt).
-
-        # separate RNG for simulation for step order independence
-        sim_rng = np.random.RandomState(rng.randint(npext.maxint))
+        sim_rng = self.get_sim_rng(rng)
 
         def step(t):
             x = dist.sample(n=1, d=size_out, rng=sim_rng)[0]
@@ -127,6 +142,8 @@ class FilteredNoise(Process):
     scale : bool, optional
         Whether to scale the white noise for integration, making the output
         signal invariant to `dt`. Defaults to True.
+    seed : int, optional
+        Random number seed. Ensures noise will be the same each run.
     """
 
     synapse = LinearFilterParam()
@@ -134,8 +151,8 @@ class FilteredNoise(Process):
     scale = BoolParam()
 
     def __init__(self, synapse=Lowpass(tau=0.005), synapse_kwargs={},
-                 dist=Gaussian(mean=0, std=1), scale=True):
-        super(FilteredNoise, self).__init__()
+                 dist=Gaussian(mean=0, std=1), scale=True, seed=None):
+        super(FilteredNoise, self).__init__(seed=seed)
         self.synapse = synapse
         self.synapse_kwargs = synapse_kwargs
         self.dist = dist
@@ -153,9 +170,7 @@ class FilteredNoise(Process):
         alpha = 1. / np.sqrt(dt)
         output = np.zeros(size_out)
         filter_step = self.synapse.make_step(dt, output, **self.synapse_kwargs)
-
-        # separate RNG for simulation for step order independence
-        sim_rng = np.random.RandomState(rng.randint(npext.maxint))
+        sim_rng = self.get_sim_rng(rng)
 
         def step(t):
             x = dist.sample(n=1, d=size_out, rng=sim_rng)[0]
@@ -177,12 +192,14 @@ class BrownNoise(FilteredNoise):
     dist : Distribution
         The distribution used to generate the white noise.
         Default: Gaussian(mean=0, std=1)
+    seed : int, optional
+        Random number seed. Ensures noise will be the same each run.
     """
-    def __init__(self, dist=Gaussian(mean=0, std=1)):
+    def __init__(self, dist=Gaussian(mean=0, std=1), seed=None):
         super(BrownNoise, self).__init__(
             synapse=LinearFilter([1], [1, 0]),
             synapse_kwargs=dict(method='euler'),
-            dist=dist)
+            dist=dist, seed=seed)
 
     def __repr__(self):
         return "%s(%r)" % (self.__class__.__name__, self.dist)
@@ -208,13 +225,15 @@ class WhiteSignal(Process):
         If not specified, no filtering will be done.
     rms : float, optional
         The root mean square power of the filtered signal. Default: 0.5.
+    seed : int, optional
+        Random number seed. Ensures noise will be the same each run.
     """
     period = NumberParam(low=0, low_open=True)
     high = NumberParam(low=0, low_open=True, optional=True)
     rms = NumberParam(low=0, low_open=True)
 
-    def __init__(self, period, high=None, rms=0.5):
-        super(WhiteSignal, self).__init__()
+    def __init__(self, period, high=None, rms=0.5, seed=None):
+        super(WhiteSignal, self).__init__(seed=seed)
         self.period = period
         self.high = high
         self.rms = rms
@@ -226,6 +245,7 @@ class WhiteSignal(Process):
     def make_step(self, size_in, size_out, dt, rng):
         assert size_in == 0
         d = size_out
+        rng = self.get_rng(rng)
 
         n_coefficients = int(np.ceil(self.period / dt / 2.))
         shape = (n_coefficients + 1, d)
