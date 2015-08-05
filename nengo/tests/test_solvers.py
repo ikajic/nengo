@@ -68,8 +68,13 @@ def test_conjgrad(rng):
 
 
 @pytest.mark.parametrize('Solver', [
-    Lstsq(), LstsqNoise(), LstsqL2(), LstsqL2nz(), LstsqDrop()])
+    Lstsq, LstsqNoise, LstsqL2, LstsqL2nz, LstsqDrop])
 def test_decoder_solver(Solver, plt, rng):
+    if isinstance(Solver, tuple):
+        Solver, args, kwargs = Solver
+    else:
+        args, kwargs = (), {}
+
     dims = 1
     n_neurons = 100
     n_points = 500
@@ -80,7 +85,7 @@ def test_decoder_solver(Solver, plt, rng):
     train = get_eval_points(n_points, dims, rng=rng)
     Atrain = rates(np.dot(train, E))
 
-    D, _ = Solver(Atrain, train, rng=rng)
+    D, _ = Solver(*args, **kwargs)(Atrain, train, rng=rng)
 
     test = get_eval_points(n_points, dims, rng=rng, sort=True)
     Atest = rates(np.dot(test, E))
@@ -114,7 +119,8 @@ def test_subsolvers(Solver, seed, rng, tol=1e-2):
         # in-situ. They are tested more robustly elsewhere.
 
 
-@pytest.mark.parametrize('Solver', [LstsqL2(solver=randomized_svd), LstsqL1()])
+@pytest.mark.parametrize('Solver', [
+    (LstsqL2, (), {'solver': randomized_svd}), LstsqL1])
 def test_decoder_solver_extra(Solver, plt, rng):
     pytest.importorskip('sklearn')
     test_decoder_solver(Solver, plt, rng)
