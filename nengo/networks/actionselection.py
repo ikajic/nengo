@@ -65,9 +65,9 @@ def config_with_default_synapse(config, synapse):
     return config, override
 
 
-def BasalGanglia(dimensions, n_neurons_per_ensemble=100, output_weight=-3,
-                 input_bias=0.0, ampa_config=None, gaba_config=None, net=None,
-                 weights={}, split_GPi_SNr=False):  # noqa: C901
+def BasalGanglia(dimensions, n_neurons_per_ensemble=100,  # noqa: C901
+                 output_weight=-3, input_bias=0.0, ampa_config=None,
+                 gaba_config=None, net=None, weights={}, split_GPi_SNr=False):
     """Winner takes all; outputs 0 at max dimension, negative elsewhere."""
 
     if net is None:
