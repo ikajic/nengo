@@ -404,6 +404,68 @@ class Conv2(Process):
         return step_conv2
 
 
+class Pool2(Process):
+    """Perform 2-D (image) pooling on an input.
+
+    Currently only supports average pooling.
+    """
+    shape_in = TupleParam(length=3)
+    shape_out = TupleParam(length=3)
+    size = IntParam(low=1)
+    stride = IntParam(low=1)
+
+    def __init__(self, shape_in, size, stride=None):
+        self.shape_in = shape_in
+        self.size = size
+        self.stride = stride if stride is not None else size
+        if self.stride > self.size:
+            raise ValueError("Stride (%d) must be <= size (%d)" %
+                             (self.stride, self.size))
+
+        c, nxi, nxj = self.shape_in
+        nyi = (nxi - 1) / self.stride + 1
+        nyj = (nxj - 1) / self.stride + 1
+        self.shape_out = (c, nyi, nyj)
+
+        super(Pool2, self).__init__(
+            default_size_in=np.prod(self.shape_in),
+            default_size_out=np.prod(self.shape_out))
+
+    def make_step(self, size_in, size_out, dt, rng):
+        assert size_in == np.prod(self.shape_in)
+        assert size_out == np.prod(self.shape_out)
+        c, nxi, nxj = self.shape_in
+        c, nyi, nyj = self.shape_out
+        s = self.size
+        st = self.stride
+        pooltype = 'avg'
+
+        def step_pool2(t, x):
+            x = x.reshape(c, nxi, nxj)
+            y = np.zeros_like(x[:, ::st, ::st])
+            n = np.zeros((nyi, nyj))
+            assert y.shape[-2:] == (nyi, nyj)
+
+            for i in range(s):
+                for j in range(s):
+                    xij = x[:, i::st, j::st]
+                    ni, nj = xij.shape[-2:]
+                    if pooltype == 'max':
+                        y[:, :ni, :nj] = np.maximum(y[:, :ni, :nj], xij)
+                    elif pooltype == 'avg':
+                        y[:, :ni, :nj] += xij
+                        n[:ni, :nj] += 1
+                    else:
+                        raise NotImplementedError(pooltype)
+
+            if pooltype == 'avg':
+                y /= n
+
+            return y.ravel()
+
+        return step_pool2
+
+
 class ProcessParam(Parameter):
     """Must be a Process."""
 
