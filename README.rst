@@ -28,20 +28,27 @@ Nengo: Large-scale brain modelling in Python
 Installation
 ============
 
+If you're on Windows, you'll need to install Numpy first.
+Using `Anaconda <https://store.continuum.io/cshop/anaconda/>`_ or
+  the `official installer <https://www.python.org/downloads/>`_ and
+  `unofficial binaries <http://www.lfd.uci.edu/~gohlke/pythonlibs/>`
+
 To install Nengo::
 
   pip install nengo
 
-Nengo depends on `NumPy <http://www.numpy.org/>`_.
-If you have difficulty installing Nengo, try
-`installing NumPy <https://pythonhosted.org/nengo/getting_started.html#installation>`_ first.
+If you have difficulty installing Nengo, please read the more detailed
+`Nengo installation instructions <https://pythonhosted.org/nengo/getting_started.html#installation>`_ first.
+
+If you'd like to install Nengo from source, please read the `development
+installation instructions <https://pythonhosted.org/nengo/dev_introduction.html>`_.
 
 Nengo supports Python 2.6, 2.7, and 3.3+.
 
 Examples
 ========
 
-Here are five of
+Here are six of
 `many examples <https://pythonhosted.org/nengo/examples.html>`_
 showing how Nengo enables the creation and simulation of
 large-scale neural models in few lines of code.
@@ -56,6 +63,8 @@ large-scale neural models in few lines of code.
    <https://pythonhosted.org/nengo/examples/learn_communication_channel.html>`_
 5. `Simple question answering with the Semantic Pointer Architecture
    <https://pythonhosted.org/nengo/examples/question.html>`_
+6. `A summary of the principles underlying all of these examples
+   <https://pythonhosted.org/nengo/examples/nef_summary.html>`_
 
 Documentation
 =============
