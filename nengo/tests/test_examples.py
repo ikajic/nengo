@@ -17,27 +17,47 @@ _pytest.capture.DontReadFromInput.write = lambda: None
 _pytest.capture.DontReadFromInput.flush = lambda: None
 
 
-all_examples = set([os.path.splitext(f)[0] for f in os.listdir(examples_dir)])
-slow_examples = set(['inhibitory_gating',
-                     'izhikevich',
-                     'learn_communication_channel',
-                     'learn_product',
-                     'learn_square',
-                     'learn_unsupervised',
-                     'lorenz_attractor',
-                     'nef_summary',
-                     'network_design',
-                     'network_design_advanced',
-                     'question',
-                     'question_control',
-                     'question_memory',
-                     'spa_parser',
-                     'spa_sequence',
-                     'spa_sequence_routed'])
-fast_examples = all_examples - slow_examples
+too_slow = ['inhibitory_gating',
+            'izhikevich',
+            'learn_communication_channel',
+            'learn_product',
+            'learn_square',
+            'learn_unsupervised',
+            'lorenz_attractor',
+            'nef_summary',
+            'network_design',
+            'network_design_advanced',
+            'question',
+            'question_control',
+            'question_memory',
+            'spa_parser',
+            'spa_sequence',
+            'spa_sequence_routed']
+
+all_examples, slow_examples, fast_examples = [], [], []
+
+for subdir, _, files in os.walk(examples_dir):
+    if (os.path.sep + '.') in subdir:
+        continue
+
+    examples = [os.path.join(subdir, os.path.splitext(f)[0]) for f in files
+                if f.endswith('.ipynb')]
+    all_examples.extend(examples)
+    slow_examples.extend([e for e, f in zip(examples, files)
+                          if os.path.splitext(f)[0] in too_slow])
+    fast_examples.extend([e for e, f in zip(examples, files)
+                          if os.path.splitext(f)[0] not in too_slow])
+
+# os.walk goes in arbitrary order, so sort after the fact to keep pytest happy
+all_examples.sort()
+slow_examples.sort()
+fast_examples.sort()
 
 
 def assert_noexceptions(nb_file, tmpdir, plt):
+    plt.saveas = None  # plt used to ensure figures are closed, but don't save
+    pytest.importorskip("IPython", minversion="1.0")
+    pytest.importorskip("jinja2")
     from nengo.utils.ipython import export_py, load_notebook
     nb_path = os.path.join(examples_dir, "%s.ipynb" % nb_file)
     nb = load_notebook(nb_path)
@@ -45,16 +65,12 @@ def assert_noexceptions(nb_file, tmpdir, plt):
         tmpdir.join(os.path.splitext(os.path.basename(nb_path))[0]))
     export_py(nb, pyfile)
     execfile(pyfile, {})
-    # Note: plt imported but not used to ensure figures are closed
-    plt.saveas = None
 
 
 @pytest.mark.example
 @pytest.mark.parametrize('nb_file', fast_examples)
 def test_fast_noexceptions(nb_file, tmpdir, plt):
     """Ensure that no cells raise an exception."""
-    pytest.importorskip("IPython", minversion="1.0")
-    pytest.importorskip("jinja2")
     assert_noexceptions(nb_file, tmpdir, plt)
 
 
@@ -63,8 +79,6 @@ def test_fast_noexceptions(nb_file, tmpdir, plt):
 @pytest.mark.parametrize('nb_file', slow_examples)
 def test_slow_noexceptions(nb_file, tmpdir, plt):
     """Ensure that no cells raise an exception."""
-    pytest.importorskip("IPython", minversion="1.0")
-    pytest.importorskip("jinja2")
     assert_noexceptions(nb_file, tmpdir, plt)
 
 
@@ -88,7 +102,3 @@ def test_nooutput(nb_file):
             check_all(ws.cells)
     else:
         check_all(nb.cells)
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, '-v'])

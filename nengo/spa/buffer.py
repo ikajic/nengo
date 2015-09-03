@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 
 import nengo
@@ -27,6 +29,8 @@ class Buffer(Module):
     def __init__(self, dimensions, subdimensions=16, neurons_per_dimension=50,
                  vocab=None, direct=False, label=None, seed=None,
                  add_to_container=None):
+        warnings.warn("Buffer is deprecated in favour of spa.State",
+                      DeprecationWarning)
         super(Buffer, self).__init__(label, seed, add_to_container)
 
         if vocab is None:

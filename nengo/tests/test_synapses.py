@@ -1,22 +1,17 @@
-import logging
-
 import numpy as np
 import pytest
 
 import nengo
-from nengo.processes import WhiteNoise
+from nengo.processes import WhiteSignal
 from nengo.synapses import (
-    Alpha, filt, filtfilt, LinearFilter, Lowpass, SynapseParam)
+    Alpha, filt, filtfilt, LinearFilter, Lowpass, SynapseParam, Triangle)
 from nengo.utils.testing import allclose
-
-logger = logging.getLogger(__name__)
 
 
 def run_synapse(Simulator, seed, synapse, dt=1e-3, runtime=1., n_neurons=None):
     model = nengo.Network(seed=seed)
     with model:
-        u = nengo.Node(
-            output=WhiteNoise(runtime, 5).f(rng=np.random.RandomState(seed)))
+        u = nengo.Node(output=WhiteSignal(runtime, 5))
 
         if n_neurons is not None:
             a = nengo.Ensemble(n_neurons, 1)
@@ -28,7 +23,7 @@ def run_synapse(Simulator, seed, synapse, dt=1e-3, runtime=1., n_neurons=None):
         ref = nengo.Probe(target)
         filtered = nengo.Probe(target, synapse=synapse)
 
-    sim = Simulator(model, dt=dt)
+    sim = Simulator(model, dt=dt, seed=seed+1)
     sim.run(runtime)
 
     return sim.trange(), sim.data[ref], sim.data[filtered]
@@ -55,6 +50,24 @@ def test_alpha(Simulator, plt, seed):
     assert allclose(t, y, yhat, delay=dt, atol=5e-6, plt=plt)
 
 
+def test_triangle(Simulator, plt, seed):
+    dt = 1e-3
+    tau = 0.03
+
+    t, x, ysim = run_synapse(Simulator, seed, Triangle(tau), dt=dt)
+    yfilt = filt(x, Triangle(tau), dt=dt)
+
+    # compare with convolved filter
+    n_taps = int(round(tau / dt)) + 1
+    num = np.arange(n_taps, 0, -1, dtype=float)
+    num /= num.sum()
+    y = np.convolve(x.ravel(), num)[:len(t)]
+    y.shape = (-1, 1)
+
+    assert np.allclose(y, yfilt, rtol=0)
+    assert allclose(t, y, ysim, delay=dt, rtol=0, plt=plt)
+
+
 def test_decoders(Simulator, plt, seed):
     dt = 1e-3
     tau = 0.01
@@ -66,20 +79,20 @@ def test_decoders(Simulator, plt, seed):
     assert allclose(t, y, yhat, delay=dt, plt=plt)
 
 
-def test_general(Simulator, plt, seed):
+def test_linearfilter(Simulator, plt, seed):
     dt = 1e-3
 
     # The following num, den are for a 4th order analog Butterworth filter,
-    # generated with `scipy.signal.butter(4, 1. / 0.03, analog=True)`
-    num = np.array([1234567.90123457])
-    den = np.array([1.0, 87.104197658425107, 3793.5706248589954,
-                    96782.441842694592, 1234567.9012345686])
+    # generated with `scipy.signal.butter(4, 0.2, analog=False)`
+    num = np.array(
+        [0.00482434, 0.01929737, 0.02894606, 0.01929737, 0.00482434])
+    den = np.array([1., -2.36951301,  2.31398841, -1.05466541,  0.18737949])
 
-    t, x, yhat = run_synapse(Simulator, seed, LinearFilter(num, den), dt=dt)
-    y = filt(x, LinearFilter(num, den), dt=dt)
+    synapse = LinearFilter(num, den, analog=False)
+    t, x, yhat = run_synapse(Simulator, seed, synapse, dt=dt)
+    y = filt(x, synapse, dt=dt)
 
-    # Nengo sim is one timestep behind raw filter
-    assert allclose(t[:-1], y[:-1], yhat[1:], plt=plt)
+    assert allclose(t, y, yhat, delay=dt, plt=plt)
 
 
 def test_filt(plt, rng):
@@ -161,8 +174,3 @@ def test_synapseparam():
     # Non-synapse not OK
     with pytest.raises(ValueError):
         inst.sp = 'a'
-
-
-if __name__ == "__main__":
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])

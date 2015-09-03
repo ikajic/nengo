@@ -3,7 +3,7 @@ import functools
 
 import numpy as np
 
-from nengo.params import Parameter
+from nengo.params import Parameter, Unconfigurable
 from nengo.utils.compat import is_number
 from nengo.utils.filter_design import cont2discrete
 
@@ -34,9 +34,10 @@ class LinearFilter(Synapse):
     .. [1] http://en.wikipedia.org/wiki/Filter_%28signal_processing%29
     """
 
-    def __init__(self, num, den):
+    def __init__(self, num, den, analog=True):
         self.num = num
         self.den = den
+        self.analog = analog
 
     def __repr__(self):
         return "%s(%s, %s)" % (self.__class__.__name__, self.num, self.den)
@@ -72,8 +73,13 @@ class LinearFilter(Synapse):
         y.appendleft(np.array(output))
 
     def make_step(self, dt, output, method='zoh'):
-        num, den, _ = cont2discrete((self.num, self.den), dt, method=method)
-        num = num.flatten()
+        num, den = self.num, self.den
+        if self.analog:
+            num, den, _ = cont2discrete((num, den), dt, method=method)
+            num = num.flatten()
+
+        if den[0] != 1.:
+            raise ValueError("First element of the denominator must be 1")
         num = num[1:] if num[0] == 0 else num
         den = den[1:]  # drop first element (equal to 1)
 
@@ -145,6 +151,38 @@ class Alpha(LinearFilter):
             return functools.partial(
                 LinearFilter.no_den_step, output=output, b=1.)
         return super(Alpha, self).make_step(dt, output)
+
+
+class Triangle(Synapse):
+    """Triangular FIR synapse.
+
+    This synapse has a triangular and finite impulse response. The length of
+    the triangle is `t` seconds, thus the digital filter will have `t / dt + 1`
+    taps.
+    """
+    def __init__(self, t):
+        self.t = t
+
+    def __repr__(self):
+        return "%s(%s)" % (self.__class__.__name__, self.t)
+
+    def make_step(self, dt, output):
+        n_taps = int(np.round(self.t / float(dt))) + 1
+        num = np.arange(n_taps, 0, -1, dtype=output.dtype)
+        num /= num.sum()
+
+        # Minimal multiply implementation finds the difference between
+        # coefficients and subtracts a scaled signal at each time step.
+        n0, ndiff = num[0], num[-1]
+        x = collections.deque(maxlen=n_taps)
+
+        def step(signal, output=output, x=x, num=num):
+            output[...] += n0 * signal
+            for xk in x:
+                output -= xk
+            x.appendleft(ndiff * signal)
+
+        return step
 
 
 def filt(signal, synapse, dt, axis=0, x0=None, copy=True):
@@ -233,18 +271,22 @@ def filtfilt(signal, synapse, dt, axis=0, copy=True):
 
 
 class SynapseParam(Parameter):
-    def __init__(self, default, optional=True, readonly=False):
-        assert optional  # None has meaning (no filtering)
-        super(SynapseParam, self).__init__(
-            default, optional, readonly)
+    def __init__(self, default=Unconfigurable, optional=True, readonly=False):
+        super(SynapseParam, self).__init__(default, optional, readonly)
 
-    def __set__(self, conn, synapse):
+    def __set__(self, instance, synapse):
         if is_number(synapse):
             synapse = Lowpass(synapse)
-        self.validate(conn, synapse)
-        self.data[conn] = synapse
+        super(SynapseParam, self).__set__(instance, synapse)
 
-    def validate(self, conn, synapse):
+    def validate(self, instance, synapse):
         if synapse is not None and not isinstance(synapse, Synapse):
             raise ValueError("'%s' is not a synapse type" % synapse)
-        super(SynapseParam, self).validate(conn, synapse)
+        super(SynapseParam, self).validate(instance, synapse)
+
+
+class LinearFilterParam(SynapseParam):
+    def validate(self, instance, synapse):
+        if synapse is not None and not isinstance(synapse, LinearFilter):
+            raise ValueError("'%s' is not a LinearFilter" % synapse)
+        super(SynapseParam, self).validate(instance, synapse)

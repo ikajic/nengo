@@ -1,14 +1,8 @@
-import logging
-
 import numpy as np
 import pytest
 
-import nengo
 from nengo import params
-from nengo.dists import UniformHypersphere
 from nengo.utils.compat import PY2
-
-logger = logging.getLogger(__name__)
 
 
 def test_default():
@@ -60,6 +54,24 @@ def test_readonly():
         inst.r = 'set again'
     assert inst.p == 3
     assert inst.r == 'set'
+
+
+def test_obsoleteparam():
+    """ObsoleteParams must not be set."""
+
+    class Test(object):
+        ab = params.ObsoleteParam(123, "msg")
+
+    inst = Test()
+
+    # cannot be read
+    with pytest.raises(ValueError):
+        inst.ab
+
+    # can only be assigned Unconfigurable
+    inst.ab = params.Unconfigurable
+    with pytest.raises(ValueError):
+        inst.ab = True
 
 
 def test_boolparam():
@@ -182,41 +194,6 @@ def test_dictparam():
         inst2.dp = [('a', 1), ('b', 2)]
 
 
-def test_distributionparam():
-    """DistributionParams can be distributions or samples."""
-    class Test(object):
-        dp = params.DistributionParam(default=None, sample_shape=['*', '*'])
-
-    inst = Test()
-    inst.dp = UniformHypersphere()
-    assert isinstance(inst.dp, UniformHypersphere)
-    inst.dp = np.array([[1], [2], [3]])
-    assert np.all(inst.dp == np.array([[1], [2], [3]]))
-    with pytest.raises(ValueError):
-        inst.dp = 'a'
-    # Sample must have correct dims
-    with pytest.raises(ValueError):
-        inst.dp = np.array([1])
-
-
-def test_distributionparam_sample_shape():
-    """sample_shape dictates the shape of the sample that can be set."""
-    class Test(object):
-        dp = params.DistributionParam(default=None, sample_shape=['d1', 10])
-        d1 = 4
-
-    inst = Test()
-    # Distributions are still cool
-    inst.dp = UniformHypersphere()
-    assert isinstance(inst.dp, UniformHypersphere)
-    # Must be shape (4, 10)
-    inst.dp = np.ones((4, 10))
-    assert np.all(inst.dp == np.ones((4, 10)))
-    with pytest.raises(ValueError):
-        inst.dp = np.ones((10, 4))
-    assert np.all(inst.dp == np.ones((4, 10)))
-
-
 def test_ndarrayparam():
     """NdarrayParams must be able to be made into float ndarrays."""
     class Test(object):
@@ -267,8 +244,3 @@ def test_functionparam():
     # Not OK: not a function
     with pytest.raises(ValueError):
         inst.fp = 0
-
-
-if __name__ == "__main__":
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])

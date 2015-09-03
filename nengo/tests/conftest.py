@@ -1,6 +1,7 @@
 import hashlib
 import inspect
 import os
+import re
 
 import numpy as np
 import pytest
@@ -11,7 +12,7 @@ from nengo.neurons import Direct, LIF, LIFRate, RectifiedLinear, Sigmoid
 from nengo.rc import rc
 from nengo.simulator import Simulator as ReferenceSimulator
 from nengo.utils.compat import ensure_bytes, is_string
-from nengo.utils.testing import Analytics, Plotter
+from nengo.utils.testing import Analytics, Logger, Plotter
 
 test_seed = 0  # changing this will change seeds for all tests
 
@@ -119,6 +120,32 @@ def analytics(request):
     return analytics.__enter__()
 
 
+@pytest.fixture
+def analytics_data(request):
+    paths = request.config.getvalue('compare')
+    function_name = parametrize_function_name(request, re.sub(
+        '^test_[a-zA-Z0-9]*_', 'test_', request.function.__name__, count=1))
+    return [Analytics.load(
+        p, request.module.__name__, function_name) for p in paths]
+
+
+@pytest.fixture
+def logger(request):
+    """a logging.Logger object.
+
+    Please use this if your test emits log messages.
+
+    This will keep saved logs organized in a simulator-specific folder,
+    with an automatically generated name.
+    """
+    dirname = recorder_dirname(request, 'logs')
+    logger = Logger(
+        dirname, request.module.__name__,
+        parametrize_function_name(request, request.function.__name__))
+    request.addfinalizer(lambda: logger.__exit__(None, None, None))
+    return logger.__enter__()
+
+
 def function_seed(function, mod=0):
     c = function.__code__
 
@@ -130,7 +157,10 @@ def function_seed(function, mod=0):
     hash_list = os.path.normpath(path).split(os.path.sep) + [c.co_name]
     hash_string = ensure_bytes('/'.join(hash_list))
     i = int(hashlib.md5(hash_string).hexdigest()[:15], 16)
-    return (i + mod) % npext.maxint
+    s = (i + mod) % npext.maxint
+    int_s = int(s)  # numpy 1.8.0 bug when RandomState on long type inputs
+    assert type(int_s) == int  # should not still be a long because < maxint
+    return int_s
 
 
 @pytest.fixture
@@ -163,20 +193,6 @@ def pytest_generate_tests(metafunc):
             "nl_nodirect", [LIF, LIFRate, RectifiedLinear, Sigmoid])
 
 
-def pytest_addoption(parser):
-    parser.addoption(
-        '--plots', nargs='?', default=False, const=True,
-        help='Save plots (can optionally specify a directory for plots).')
-    parser.addoption(
-        '--analytics', nargs='?', default=False, const=True,
-        help='Save analytics (can optionally specify a directory for data).')
-    parser.addoption('--noexamples', action='store_false', default=True,
-                     help='Do not run examples')
-    parser.addoption(
-        '--slow', action='store_true', default=False,
-        help='Also run slow tests.')
-
-
 def pytest_runtest_setup(item):
     for mark, option, message in [
             ('example', 'noexamples', "examples not requested"),
@@ -189,7 +205,8 @@ def pytest_runtest_setup(item):
         skipreasons = []
         for fixture_name, option, message in [
                 ('analytics', 'analytics', "analytics not requested"),
-                ('plt', 'plots', "plots not requested")]:
+                ('plt', 'plots', "plots not requested"),
+                ('logger', 'logs', "logs not requested")]:
             if fixture_name in item.fixturenames:
                 if item.config.getvalue(option):
                     skip = False
@@ -197,3 +214,21 @@ def pytest_runtest_setup(item):
                     skipreasons.append(message)
         if skip:
             pytest.skip(" and ".join(skipreasons))
+
+
+def pytest_collection_modifyitems(session, config, items):
+    compare = config.getvalue('compare') is None
+    for item in list(items):
+        if (getattr(item.obj, 'compare', None) is None) != compare:
+            items.remove(item)
+
+
+def pytest_terminal_summary(terminalreporter):
+    reports = terminalreporter.getreports('passed')
+    if not reports or terminalreporter.config.getvalue('compare') is None:
+        return
+    terminalreporter.write_sep("=", "PASSED")
+    for rep in reports:
+        for name, content in rep.sections:
+            terminalreporter.writer.sep("-", name)
+            terminalreporter.writer.line(content)

@@ -28,29 +28,110 @@ Release History
   ``min_voltage``. Voltages are clipped such that they do not drop below
   this value (previously, this was fixed at 0).
   (`#666 <https://github.com/nengo/nengo/pull/666>`_)
+- ``Process`` objects can now be passed directly as node outputs,
+  making them easier to use. The ``Process`` interface is also improved
+  and is currently the same as the ``Synapse`` interface. However,
+  further improvements are pending, and the current implementation
+  SHOULD NOT BE RELEASED!
+  (`#652 <https://github.com/nengo/nengo/pull/652>`_)
+- The ``PES`` learning rule no longer accepts a connection as an argument.
+  Instead, error information is transmitted by making a connection to the
+  learning rule object (e.g.,
+  ``nengo.Connection(error_ensemble, connection.learning_rule)``.
+  (`#344 <https://github.com/nengo/nengo/issues/344>`_,
+  `#642 <https://github.com/nengo/nengo/pull/642>`_)
+- The ``modulatory`` attribute has been removed from ``nengo.Connection``.
+  This was only used for learning rules to this point, and has been removed
+  in favor of connecting directly to the learning rule.
+  (`#642 <https://github.com/nengo/nengo/pull/642>`_)
+- Connection weights can now be probed with ``nengo.Probe(conn, 'weights')``,
+  and these are always the weights that will change with learning
+  regardless of the type of connection. Previously, either ``decoders`` or
+  ``transform`` may have changed depending on the type of connection;
+  it is now no longer possible to probe ``decoders`` or ``transform``.
+  (`#729 <https://github.com/nengo/nengo/pull/729>`_)
+- The ``spa.State`` object replaces the old ``spa.Memory`` and ``spa.Buffer``.
+  These old modules are deprecated and will be removed in 2.2.
+  (`#796 <https://github.com/nengo/nengo/pull/796>`_)
 
 **Behavioural changes**
 
+- The sign on the ``PES`` learning rule's error has been flipped to conform
+  with most learning rules, in which error is minimized. The error should be
+  ``actual - target``. (`#642 <https://github.com/nengo/nengo/pull/642>`_)
+- The ``PES`` rule's learning rate is invariant to the number of neurons
+  in the presynaptic population. The effective speed of learning should now
+  be unaffected by changes in the size of the presynaptic population.
+  Existing learning networks may need to be updated; to achieve identical
+  behavior, scale the learning rate by ``pre.n_neurons / 100``.
+  (`#643 <https://github.com/nengo/nengo/issues/643>`_)
 - The ``probeable`` attribute of all Nengo objects is now implemented
   as a property, rather than a configurable parameter.
   (`#671 <https://github.com/nengo/nengo/pull/671>`_)
+- Node functions receive ``x`` as a copied NumPy array (instead of a readonly
+  view).
+  (`#716 <https://github.com/nengo/nengo/issues/716>`_,
+  `#722 <https://github.com/nengo/nengo/pull/722>`_)
+- The SPA Compare module produces a scalar output (instead of a specific
+  vector).
+  (`#775 <https://github.com/nengo/nengo/issues/775>`_,
+  `#782 <https://github.com/nengo/nengo/pull/782>`_)
+- The IPython notebook progress bar has to be activated with
+  ``%load_ext nengo.ipynb``.
+  (`#693 <https://github.com/nengo/nengo/pull/693>`_)
 
 **Improvements**
 
+- Added ``PES.pre_tau`` attribute, which sets the time constant on a lowpass
+  filter of the presynaptic activity.
+  (`#643 <https://github.com/nengo/nengo/issues/643>`_)
 - ``EnsembleArray.add_output`` now accepts a list of functions
   to be computed by each ensemble.
   (`#562 <https://github.com/nengo/nengo/issues/562>`_,
   `#580 <https://github.com/nengo/nengo/pull/580>`_)
+- ``LinearFilter`` now has an ``analog`` argument which can be set
+  through its constructor. Linear filters with digital coefficients
+  can be specified by setting ``analog`` to ``False``.
+  (`#819 <https://github.com/nengo/nengo/pull/819>`_)
 - Added ``SqrtBeta`` distribution, which describes the distribution
   of semantic pointer elements.
   (`#414 <https://github.com/nengo/nengo/issues/414>`_,
   `#430 <https://github.com/nengo/nengo/pull/430>`_)
+- Added ``Triangle`` synapse, which filters with a triangular FIR filter.
+  (`#660 <https://github.com/nengo/nengo/pull/660>`_)
+- Added ``utils.connection.eval_point_decoding`` function, which
+  provides a connection's static decoding of a list of evaluation points.
+  (`#700 <https://github.com/nengo/nengo/pull/700>`_)
+- Resetting the Simulator now resets all Processes, meaning the
+  injected random signals and noise are identical between runs,
+  unless the seed is changed (which can be done through
+  ``Simulator.reset``).
+  (`#582 <https://github.com/nengo/nengo/pull/582>`_,
+  `#616 <https://github.com/nengo/nengo/pull/616>`_,
+  `#652 <https://github.com/nengo/nengo/pull/652>`_)
+- An exception is raised if SPA modules are not properly assigned to an SPA
+  attribute.
+  (`#730 <https://github.com/nengo/nengo/issues/730>`_,
+  `#791 <https://github.com/nengo/nengo/pull/791>`_)
+- The ``Product`` network is now more accurate.
+  (`#651 <https://github.com/nengo/nengo/pull/651>`_)
+- Added ``[progress]`` section to ``nengorc`` which allows setting
+  ``progress_bar`` and ``updater``.
+  (`#693 <https://github.com/nengo/nengo/pull/693>`_)
+- Numpy arrays can now be used as indices for slicing objects.
+  (`#754 <https://github.com/nengo/nengo/pull/754>`_)
 
 **Bug fixes**
 
+- Fixed issue where setting ``Connection.seed`` through the constructor had
+  no effect. (`#724 <https://github.com/nengo/nengo/issues/725>`_)
+- Fixed issue in which learning connections could not be sliced.
+  (`#632 <https://github.com/nengo/nengo/issues/632>`_)
 - Fixed issue when probing scalar transforms.
   (`#667 <https://github.com/nengo/nengo/issues/667>`_,
   `#671 <https://github.com/nengo/nengo/pull/671>`_)
+- Fix for SPA actions that route to a module with multiple inputs.
+  (`#714 <https://github.com/nengo/nengo/pull/714>`_)
 
 2.0.1 (January 27, 2015)
 ========================

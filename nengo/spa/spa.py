@@ -14,48 +14,66 @@ class SPA(nengo.Network):
     that use Semantic Pointers and associated vocabularies in their
     definitions.
 
-    To build a SPA model, subclass this SPA class and in the make() method
-    add in your objects.  Any spa.Module object that is assigned to a
-    member variable will automatically be accessible by the SPA connection
-    system.  For example, the following code will build three modules
-    (two Buffers and a Memory) that can be referred to as a, b, and c,
-    respectively:
+    To build a SPA model, you can either just use ``with`` or
+    create a subclass of this SPA class.
 
-    class Example(spa.SPA):
-        def __init__(self):
-            self.a = spa.Buffer(dimensions=8)
-            self.b = spa.Buffer(dimensions=16)
-            self.c = spa.Memory(dimensions=8)
+    If you use the ``with`` statement, any attribute added to the SPA network
+    will be accessible for SPA connections.
+
+    If you chose to create a subclass, any spa.Module object
+    that is assigned to a
+    member variable will automatically be accessible by the SPA connection
+    system.
+
+    As an example, the following code will build three modules
+    (two Buffers and a Memory) that can be referred to as a, b, and c,
+    respectively.
+
+    First, the example with a ``with`` statement::
+
+        example = spa.Spa()
+
+        with example:
+            example.a = spa.Buffer(dimensions=8)
+            example.b = spa.Buffer(dimensions=16)
+            example.c = spa.Memory(dimensions=8)
+
+    Now, the example with a subclass::
+
+        class Example(spa.SPA):
+            def __init__(self):
+                self.a = spa.Buffer(dimensions=8)
+                self.b = spa.Buffer(dimensions=16)
+                self.c = spa.Memory(dimensions=8)
 
     These names can be used by special Modules that are aware of these
-    names.  For example, the Cortical module allows you to form connections
-    between these modules in ways that are aware of semantic pointers:
+    names.  As an example, the Cortical module allows you to form connections
+    between these modules in ways that are aware of semantic pointers::
 
-    class Example(spa.SPA):
-        def __init__(self):
-            self.a = spa.Buffer(dimensions=8)
-            self.b = spa.Buffer(dimensions=16)
-            self.c = spa.Memory(dimensions=8)
-            self.cortical = spa.Cortical(spa.Actions(
-                'b=a*CAT', 'c=b*~CAT'))
+        with example:
+            example.a = spa.Buffer(dimensions=8)
+            example.b = spa.Buffer(dimensions=16)
+            example.c = spa.Memory(dimensions=8)
+            example.cortical = spa.Cortical(spa.Actions(
+                    'b=a*CAT', 'c=b*~CAT'))
 
     For complex cognitive control, the key modules are the BasalGangla
     and the Thalamus.  Together, these allow us to define complex actions
-    using the Action syntax:
+    using the Action syntax::
 
-    class SequenceExample(spa.SPA):
-        def __init__(self):
-            self.state = spa.Memory(dimensions=32)
+        class SequenceExample(spa.SPA):
+            def __init__(self):
+                self.state = spa.Memory(dimensions=32)
 
-            actions = spa.Actions('dot(state, A) --> state=B',
-                                  'dot(state, B) --> state=C',
-                                  'dot(state, C) --> state=D',
-                                  'dot(state, D) --> state=E',
-                                  'dot(state, E) --> state=A',
-                                  )
+                actions = spa.Actions('dot(state, A) --> state=B',
+                                      'dot(state, B) --> state=C',
+                                      'dot(state, C) --> state=D',
+                                      'dot(state, D) --> state=E',
+                                      'dot(state, E) --> state=A',
+                                      )
 
-            self.bg = spa.BasalGanglia(actions=actions)
-            self.thal = spa.Thalamus(self.bg)
+                self.bg = spa.BasalGanglia(actions=actions)
+                self.thal = spa.Thalamus(self.bg)
     """
 
     def __init__(self, label=None, seed=None, add_to_container=None):
@@ -86,9 +104,30 @@ class SPA(nengo.Network):
 
             value.on_add(self)
 
+    def __exit__(self, ex_type, ex_value, traceback):
+        super(SPA, self).__exit__(ex_type, ex_value, traceback)
+        if ex_type is not None:
+            # re-raise the exception that triggered this __exit__
+            return False
+
+        module_list = frozenset(self._modules.values())
+        for net in self.networks:
+            # Since there are no attributes to distinguish what's been added
+            # and what hasn't, we have to ask the network
+            if isinstance(net, Module) and (net not in module_list):
+                raise ValueError("%s was not added as an attribute of "
+                                 "the SPA network and won't be detected"
+                                 % (net))
+
     def get_module(self, name):
         """Return the module for the given name."""
-        return self._modules[name]
+        if name in self._modules:
+            return self._modules[name]
+        elif '_' in name:
+            module, name = name.rsplit('_', 1)
+            if module in self._modules:
+                return self._modules[module]
+        raise KeyError('Could not find module "%s"' % name)
 
     def get_default_vocab(self, dimensions):
         """Return a Vocabulary with the desired dimensions.
@@ -114,7 +153,11 @@ class SPA(nengo.Network):
             return self._modules[name].inputs['default']
         elif '_' in name:
             module, name = name.rsplit('_', 1)
-            return self._modules[module].inputs[name]
+            if module in self._modules:
+                m = self._modules[module]
+                if name in m.inputs:
+                    return m.inputs[name]
+        raise KeyError('Could not find module input "%s"' % name)
 
     def get_module_inputs(self):
         for name, module in iteritems(self._modules):
@@ -137,7 +180,11 @@ class SPA(nengo.Network):
             return self._modules[name].outputs['default']
         elif '_' in name:
             module, name = name.rsplit('_', 1)
-            return self._modules[module].outputs[name]
+            if module in self._modules:
+                m = self._modules[module]
+                if name in m.outputs:
+                    return m.outputs[name]
+        raise KeyError('Could not find module output "%s"' % name)
 
     def get_module_outputs(self):
         for name, module in iteritems(self._modules):

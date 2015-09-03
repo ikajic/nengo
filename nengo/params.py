@@ -3,9 +3,7 @@ import weakref
 
 import numpy as np
 
-from nengo.dists import Distribution
-from nengo.processes import StochasticProcess
-from nengo.utils.compat import is_integer, is_number, is_string
+from nengo.utils.compat import is_array, is_integer, is_number, is_string
 from nengo.utils.numpy import compare
 from nengo.utils.stdlib import checked_call
 
@@ -37,7 +35,7 @@ class Parameter(object):
         Whether this parameter accepts the value None. By default,
         parameters are not optional (i.e., cannot be set to ``None``).
     readonly : bool, optional
-        Whether the parameter can be set multiple times.
+        If true, the parameter can only be set once.
         By default, parameters can be set multiple times.
     """
     def __init__(self, default=Unconfigurable, optional=False, readonly=False):
@@ -90,6 +88,32 @@ class Parameter(object):
             raise ValueError("Parameter is not optional; cannot set to None")
 
 
+class ObsoleteParam(Parameter):
+    """A parameter that is no longer supported."""
+
+    def __init__(self, short_msg, url=None):
+        self.short_msg = short_msg
+        self.url = url
+        super(ObsoleteParam, self).__init__(optional=True)
+
+    def __get__(self, instance, type_):
+        if instance is None:
+            # Return self so default can be inspected
+            return self
+        self.raise_error()
+
+    def validate(self, instance, value):
+        if value is not Unconfigurable:
+            # don't allow setting to anything other than unconfigurable default
+            self.raise_error()
+
+    def raise_error(self):
+        raise ValueError("This parameter is no longer supported. %s%s" % (
+            self.short_msg,
+            "\nFor more information, please visit %s" % self.url
+            if self.url is not None else ""))
+
+
 class BoolParam(Parameter):
     def validate(self, instance, boolean):
         if boolean is not None and not isinstance(boolean, bool):
@@ -108,7 +132,7 @@ class NumberParam(Parameter):
         super(NumberParam, self).__init__(default, optional, readonly)
 
     def __set__(self, instance, value):
-        if isinstance(value, np.ndarray) and value.shape == ():
+        if is_array(value) and value.shape == ():
             value = value.item()  # convert scalar array to Python object
         super(NumberParam, self).__set__(instance, value)
 
@@ -191,34 +215,6 @@ class NdarrayParam(Parameter):
                 raise ValueError("shape[%d] should be %d (got %d)"
                                  % (i, desired, ndarray.shape[i]))
         return ndarray
-
-
-class DistributionParam(NdarrayParam):
-    """Can be a Distribution or samples from a distribution."""
-
-    def __init__(self, default=Unconfigurable, sample_shape=None,
-                 optional=False, readonly=False):
-        super(DistributionParam, self).__init__(
-            default, sample_shape, optional, readonly)
-
-    def validate(self, instance, dist):
-        if dist is not None and not isinstance(dist, Distribution):
-            dist = super(DistributionParam, self).validate(instance, dist)
-        return dist
-
-
-class StochasticProcessParam(Parameter):
-    """Can be a StochasticProcess."""
-
-    def validate(self, instance, process):
-        super(StochasticProcessParam, self).validate(instance, process)
-
-        if process is not None and not isinstance(process, StochasticProcess):
-            raise ValueError(
-                "Must be StochasticProcess (got type {0}).".format(
-                    process.__class__.__name__))
-
-        return process
 
 
 FunctionInfo = collections.namedtuple('FunctionInfo', ['function', 'size'])

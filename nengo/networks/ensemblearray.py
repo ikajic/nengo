@@ -106,7 +106,7 @@ class EnsembleArray(nengo.Network):
         sizes = np.zeros(self.n_ensembles, dtype=int)
 
         if is_iterable(function) and all(callable(f) for f in function):
-            if len(function) != self.n_ensembles:
+            if len(list(function)) != self.n_ensembles:
                 raise ValueError("Must have one function per ensemble")
 
             for i, func in enumerate(function):
@@ -124,7 +124,7 @@ class EnsembleArray(nengo.Network):
         output = nengo.Node(output=None, size_in=sizes.sum(), label=name)
         setattr(self, name, output)
 
-        indices = np.zeros(len(sizes) + 1)
+        indices = np.zeros(len(sizes) + 1, dtype=int)
         indices[1:] = np.cumsum(sizes)
         for i, e in enumerate(self.ea_ensembles):
             nengo.Connection(

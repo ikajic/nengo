@@ -1,18 +1,16 @@
 import errno
-import logging
 import os
 
 import pytest
 
-import nengo
-from nengo.utils.testing import Analytics, Timer
-
-logger = logging.getLogger(__name__)
+from nengo.utils.compat import range
+from nengo.utils.testing import Analytics, Logger, Timer
 
 
 def test_timer():
     with Timer() as timer:
-        2 + 2
+        for i in range(1000):
+            2 + 2
     assert timer.duration > 0.0
     assert timer.duration < 1.0  # Pretty bad worst case
 
@@ -59,6 +57,27 @@ def test_analytics_norecord():
         analytics.get_filepath(ext='npz')
 
 
-if __name__ == "__main__":
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])
+def test_logger_record():
+    logger_obj = Logger('nengo.simulator.logs',
+                        'nengo.utils.tests.test_testing',
+                        'test_logger_record')
+    with logger_obj as logger:
+        logger.info("Testing that logger records")
+    path = logger_obj.get_filepath(ext='txt')
+    assert os.path.exists(path)
+    os.remove(path)
+    # This will remove the logger directory, only if it's empty
+    try:
+        os.rmdir(logger_obj.dirname)
+    except OSError as ex:
+        assert ex.errno == errno.ENOTEMPTY
+
+
+def test_logger_norecord():
+    logger_obj = Logger(None,
+                        'nengo.utils.tests.test_testing',
+                        'test_logger_norecord')
+    with logger_obj as logger:
+        logger.info("Testing that logger doesn't record")
+    with pytest.raises(ValueError):
+        logger_obj.get_filepath(ext='txt')

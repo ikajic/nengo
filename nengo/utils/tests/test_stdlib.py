@@ -1,12 +1,7 @@
-import logging
-
 import numpy as np
 import pytest
 
-import nengo
 from nengo.utils.stdlib import checked_call, groupby
-
-logger = logging.getLogger(__name__)
 
 
 def test_checked_call():
@@ -52,8 +47,8 @@ def test_checked_call():
 
     assert checked_call(np.sin) == (None, False)
     assert checked_call(np.sin, 0) == (0, True)
-    assert checked_call(np.sin, 0, np.array([1])) == (np.array([0]), True)
-    assert checked_call(np.sin, 0, np.array([1]), 1) == (None, False)
+    assert checked_call(np.sin, 0, np.array([1.])) == (np.array([0.]), True)
+    assert checked_call(np.sin, 0, np.array([1.]), 1) == (None, False)
 
 
 def test_checked_call_errors():
@@ -101,8 +96,3 @@ def test_groupby(hashable, force_list, rng):
         group = groups[keys.index(key2)]
         group2 = map(lambda x: x[1], keygroup2)
         assert sorted(group2) == sorted(group)
-
-
-if __name__ == "__main__":
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])

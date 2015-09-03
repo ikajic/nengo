@@ -21,6 +21,8 @@ class LearningRuleType(object):
     """
 
     learning_rate = NumberParam(low=0, low_open=True)
+    error_type = 'none'
+    modifies = []
     probeable = []
 
     def __init__(self, learning_rate=1e-6):
@@ -40,28 +42,30 @@ class PES(LearningRuleType):
 
     Parameters
     ----------
-    error : NengoObject
-        The Node, Ensemble, or Neurons providing the error signal. Must be
-        connectable to the post-synaptic object that is being used for this
-        learning rule.
+    pre_tau : float, optional
+        Filter constant on activities of neurons in pre population.
+        Defaults to 0.005.
     learning_rate : float, optional
         A scalar indicating the rate at which decoders will be adjusted.
         Defaults to 1e-5.
 
     Attributes
     ----------
+    pre_tau : float
+        Filter constant on activities of neurons in pre population.
     learning_rate : float
         The given learning rate.
     error_connection : Connection
         The modulatory connection created to project the error signal.
     """
 
-    error_connection = ConnectionParam()
-    modifies = ['Ensemble', 'Neurons']
-    probeable = ['scaled_error', 'activities']
+    pre_tau = NumberParam(low=0, low_open=True)
+    error_type = 'decoder'
+    modifies = ['transform', 'decoders']
+    probeable = ['error', 'correction', 'activities', 'delta']
 
-    def __init__(self, error_connection, learning_rate=1e-6):
-        self.error_connection = error_connection
+    def __init__(self, learning_rate=1e-4, pre_tau=0.005):
+        self.pre_tau = pre_tau
         super(PES, self).__init__(learning_rate)
 
 
@@ -97,8 +101,9 @@ class BCM(LearningRuleType):
     pre_tau = NumberParam(low=0, low_open=True)
     post_tau = NumberParam(low=0, low_open=True)
     theta_tau = NumberParam(low=0, low_open=True)
-    modifies = ['Neurons']
-    probeable = ['theta', 'pre_filtered', 'post_filtered']
+    error_type = 'none'
+    modifies = ['transform']
+    probeable = ['theta', 'pre_filtered', 'post_filtered', 'delta']
 
     def __init__(self, pre_tau=0.005, post_tau=None, theta_tau=1.0,
                  learning_rate=1e-9):
@@ -140,8 +145,9 @@ class Oja(LearningRuleType):
     pre_tau = NumberParam(low=0, low_open=True)
     post_tau = NumberParam(low=0, low_open=True)
     beta = NumberParam(low=0)
-    modifies = ['Neurons']
-    probeable = ['pre_filtered', 'post_filtered']
+    error_type = 'none'
+    modifies = ['transform']
+    probeable = ['pre_filtered', 'post_filtered', 'delta']
 
     def __init__(self, pre_tau=0.005, post_tau=None, beta=1.0,
                  learning_rate=1e-6):

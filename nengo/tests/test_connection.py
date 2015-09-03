@@ -1,5 +1,3 @@
-import logging
-
 import numpy as np
 import pytest
 
@@ -10,8 +8,6 @@ from nengo.dists import UniformHypersphere
 from nengo.solvers import LstsqL2
 from nengo.utils.functions import piecewise
 from nengo.utils.testing import allclose
-
-logger = logging.getLogger(__name__)
 
 
 def test_args(nl, seed, rng):
@@ -388,7 +384,7 @@ def test_slicing(Simulator, nl, plt, seed):
     y2[s2b] = np.dot(T2, x[s2a])
 
     s3a = [2, 0]
-    s3b = [0, 2]
+    s3b = np.asarray([0, 2])  # test slicing with numpy array
     T3 = [0.5, 0.75]
     y3 = np.zeros(3)
     y3[s3b] = np.dot(np.diag(T3), x[s3a])
@@ -398,6 +394,8 @@ def test_slicing(Simulator, nl, plt, seed):
     Ts = [T1, T2, T3]
     ys = [y1, y2, y3]
 
+    weight_solver = nengo.solvers.LstsqL2(weights=True)
+
     with nengo.Network(seed=seed) as m:
         m.config[nengo.Ensemble].neuron_type = nl()
 
@@ -406,10 +404,16 @@ def test_slicing(Simulator, nl, plt, seed):
         nengo.Connection(u, a)
 
         probes = []
+        weight_probes = []
         for sa, sb, T in zip(sas, sbs, Ts):
             b = nengo.Ensemble(N, dimensions=3, radius=1.7)
             nengo.Connection(a[sa], b[sb], transform=T)
             probes.append(nengo.Probe(b, synapse=0.03))
+
+            # also test on weight solver
+            b = nengo.Ensemble(N, dimensions=3, radius=1.7)
+            nengo.Connection(a[sa], b[sb], transform=T, solver=weight_solver)
+            weight_probes.append(nengo.Probe(b, synapse=0.03))
 
     sim = Simulator(m)
     sim.run(0.2)
@@ -421,8 +425,43 @@ def test_slicing(Simulator, nl, plt, seed):
         plt.plot(t, sim.data[p])
 
     atol = 0.01 if nl is nengo.Direct else 0.1
-    for i, [y, p] in enumerate(zip(ys, probes)):
+    for i, [y, p, wp] in enumerate(zip(ys, probes, weight_probes)):
         assert np.allclose(y, sim.data[p][-20:], atol=atol), "Failed %d" % i
+        assert np.allclose(y, sim.data[wp][-20:], atol=atol), "Weights %d" % i
+
+
+def test_neuron_slicing(Simulator, plt, seed, rng):
+    N = 6
+    sa = slice(None, None, 2)
+    sb = slice(None, None, -2)
+
+    x = np.array([-1, -0.25, 1])
+    with nengo.Network(seed=seed) as m:
+        m.config[nengo.Ensemble].neuron_type = nengo.LIFRate()
+
+        u = nengo.Node(output=x)
+        a = nengo.Ensemble(N, dimensions=3, radius=1.7)
+        b = nengo.Ensemble(N, dimensions=3, radius=1.7)
+        nengo.Connection(u, a)
+
+        c = nengo.Connection(a.neurons[sa], b.neurons[sb])
+        c.transform = rng.normal(scale=1e-3, size=(c.size_out, c.size_in))
+
+        ap = nengo.Probe(a.neurons, synapse=0.03)
+        bp = nengo.Probe(b.neurons, synapse=0.03)
+
+    sim = Simulator(m)
+    sim.run(0.2)
+    t = sim.trange()
+
+    x = sim.data[ap]
+    y = np.zeros((len(t), b.n_neurons))
+    y[:, sb] = np.dot(x[:, sa], c.transform.T)
+    y = b.neuron_type.rates(y, sim.data[b].gain, sim.data[b].bias)
+
+    plt.plot(t, y, 'k--')
+    plt.plot(t, sim.data[bp])
+    assert np.allclose(y[-10:], sim.data[bp][-10:], atol=3.0, rtol=0.0)
 
 
 def test_shortfilter(Simulator, nl):
@@ -543,18 +582,15 @@ def test_set_learning_rule():
     with nengo.Network():
         a = nengo.Ensemble(10, 2)
         b = nengo.Ensemble(10, 2)
-        err = nengo.Connection(a, b)
-        n = nengo.Node(output=lambda t, x: t * x, size_in=2)
-        nengo.Connection(a, b, learning_rule_type=nengo.PES(err))
-        nengo.Connection(a, b, learning_rule_type=nengo.PES(err),
+        nengo.Connection(a, b, learning_rule_type=nengo.PES())
+        nengo.Connection(a, b, learning_rule_type=nengo.PES(),
                          solver=LstsqL2(weights=True))
-        nengo.Connection(a.neurons, b.neurons,
-                         learning_rule_type=nengo.PES(err))
-        nengo.Connection(a.neurons, b.neurons,
-                         learning_rule_type=nengo.Oja())
+        nengo.Connection(a.neurons, b.neurons, learning_rule_type=nengo.PES())
+        nengo.Connection(a.neurons, b.neurons, learning_rule_type=nengo.Oja())
 
+        n = nengo.Node(output=lambda t, x: t * x, size_in=2)
         with pytest.raises(ValueError):
-            nengo.Connection(n, a, learning_rule_type=nengo.PES(err))
+            nengo.Connection(n, a, learning_rule_type=nengo.PES())
 
 
 def test_set_function(Simulator):
@@ -690,21 +726,11 @@ def test_decoder_probe(Simulator):
     with nengo.Network() as net:
         pre = nengo.Ensemble(10, 10)
         post = nengo.Ensemble(10, 10)
-
         c_ens = nengo.Connection(pre, post)
         c_ens_neurons = nengo.Connection(pre, post.neurons)
-        c_neurons_ens = nengo.Connection(pre.neurons, post)
-        c_neurons = nengo.Connection(pre.neurons, post.neurons)
+        nengo.Probe(c_ens, 'weights')
+        nengo.Probe(c_ens_neurons, 'weights')
 
-        # OK
-        nengo.Probe(c_ens, "decoders")
-        nengo.Probe(c_ens_neurons, "decoders")
-
-        # Not OK
-        with pytest.raises(ValueError):
-            nengo.Probe(c_neurons_ens, "decoders")
-        with pytest.raises(ValueError):
-            nengo.Probe(c_neurons, "decoders")
     assert Simulator(net)
 
 
@@ -719,13 +745,16 @@ def test_transform_probe(Simulator):
         c_neurons_ens = nengo.Connection(pre.neurons, post)
         c_neurons = nengo.Connection(pre.neurons, post.neurons)
 
-        nengo.Probe(c_neurons_ens, "transform")
-        nengo.Probe(c_neurons, "transform")
-        nengo.Probe(c_ens, "transform")
-        nengo.Probe(c_ens_neurons, "transform")
+        nengo.Probe(c_neurons_ens, 'weights')
+        nengo.Probe(c_neurons, 'weights')
+        nengo.Probe(c_ens, 'weights')
+        nengo.Probe(c_ens_neurons, 'weights')
     assert Simulator(net)
 
 
-if __name__ == "__main__":
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])
+def test_nomodulatory(Simulator):
+    """Make sure you cannot set modulatory=True on connections."""
+    with nengo.Network():
+        a = nengo.Ensemble(10, 1)
+        with pytest.raises(ValueError):
+            nengo.Connection(a, a, modulatory=True)

@@ -1,13 +1,8 @@
-import logging
-
 import numpy as np
 import pytest
 
 import nengo
 from nengo.utils.testing import warns
-
-
-logger = logging.getLogger(__name__)
 
 
 def test_time(Simulator):
@@ -317,21 +312,21 @@ def test_delay(Simulator, plt):
 
 
 def test_args(Simulator, plt):
-    def fn(t, x):
-        assert isinstance(t, float)
-        assert isinstance(x, np.ndarray)
-        assert x.flags.writeable is False
-        assert x[0] == t
+    class Fn(object):
+        def __init__(self):
+            self.last_x = None
+
+        def __call__(self, t, x):
+            assert isinstance(t, float)
+            assert isinstance(x, np.ndarray)
+            assert self.last_x is not x  # x should be a new copy on each call
+            self.last_x = x
+            assert x[0] == t
 
     with nengo.Network() as model:
         u = nengo.Node(lambda t: t)
-        v = nengo.Node(fn, size_in=1, size_out=0)
+        v = nengo.Node(Fn(), size_in=1, size_out=0)
         nengo.Connection(u, v, synapse=None)
 
     sim = Simulator(model)
     sim.run(0.01)
-
-
-if __name__ == "__main__":
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])

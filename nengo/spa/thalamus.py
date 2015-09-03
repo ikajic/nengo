@@ -176,6 +176,7 @@ class Thalamus(Module):
             source, source_vocab = self.spa.get_module_output(source_name)
 
             target_module = self.spa.get_module(target_name)
+            source_module = self.spa.get_module(source_name)
 
             # build a communication channel between the source and target
             dim = target_vocab.dimensions
@@ -188,6 +189,8 @@ class Thalamus(Module):
             subdim = self.subdim_channel
             if isinstance(target_module, nengo.spa.Buffer):
                 subdim = target_module.state.dimensions_per_ensemble
+            elif isinstance(source_module, nengo.spa.Buffer):
+                subdim = source_module.state.dimensions_per_ensemble
             elif dim < subdim:
                 subdim = dim
             elif dim % subdim != 0:
@@ -243,7 +246,7 @@ class Thalamus(Module):
 
         with self:
             # inhibit the convolution when the action is not chosen
-            inhibit = [[-self.route_inhibit]] * (self.neurons_cconv)
             for e in cconv.product.all_ensembles:
+                inhibit = -np.ones((e.n_neurons, 1)) * self.route_inhibit
                 nengo.Connection(gate, e.neurons, transform=inhibit,
                                  synapse=self.synapse_inhibit)

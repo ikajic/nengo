@@ -1,3 +1,6 @@
+import pickle
+import tempfile
+
 import pytest
 
 import nengo
@@ -123,6 +126,11 @@ def test_get_objects(Simulator):
     # Make sure it works a second time
     assert Counter([ens1, ens2, ens3]) == Counter(model.all_ensembles)
 
-if __name__ == '__main__':
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])
+
+def test_pickle():
+    with nengo.Network() as model:
+        nengo.Ensemble(10, 1)
+
+    with tempfile.TemporaryFile() as f:
+        with pytest.raises(NotImplementedError):
+            pickle.dump(model, f)

@@ -6,7 +6,6 @@ import nengo.utils.numpy as npext
 from nengo.builder.builder import Builder
 from nengo.builder.signal import Signal
 from nengo.network import Network
-from nengo.utils.compat import is_iterable, itervalues
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +34,10 @@ def build_network(model, network):
 
     if model.toplevel is None:
         model.toplevel = network
-        model.sig['common'][0] = Signal(0.0, name='Common: Zero')
-        model.sig['common'][1] = Signal(1.0, name='Common: One')
+        model.sig['common'][0] = Signal(
+            npext.array(0.0, readonly=True), name='Common: Zero')
+        model.sig['common'][1] = Signal(
+            npext.array(1.0, readonly=True), name='Common: One')
         model.seeds[network] = get_seed(network, np.random)
 
     # Set config
@@ -50,28 +51,27 @@ def build_network(model, network):
         for obj in network.objects[obj_type]:
             model.seeds[obj] = get_seed(obj, rng)
 
-    logger.info("Network step 1: Building ensembles and nodes")
+    logger.debug("Network step 1: Building ensembles and nodes")
     for obj in network.ensembles + network.nodes:
         model.build(obj)
 
-    logger.info("Network step 2: Building subnetworks")
+    logger.debug("Network step 2: Building subnetworks")
     for subnetwork in network.networks:
         model.build(subnetwork)
 
-    logger.info("Network step 3: Building connections")
+    logger.debug("Network step 3: Building connections")
     for conn in network.connections:
+        # NB: we do these in the order in which they're defined, and build the
+        # learning rule in the connection builder. Because learning rules are
+        # attached to connections, the connection that contains the learning
+        # rule (and the learning rule) are always built *before* a connection
+        # that attaches to that learning rule. Therefore, we don't have to
+        # worry about connection ordering here.
+        # TODO: Except perhaps if the connection being learned
+        # is in a subnetwork?
         model.build(conn)
 
-    logger.info("Network step 4: Building learning rules")
-    for conn in network.connections:
-        rule = conn.learning_rule
-        if is_iterable(rule):
-            for r in (itervalues(rule) if isinstance(rule, dict) else rule):
-                model.build(r)
-        elif rule is not None:
-            model.build(rule)
-
-    logger.info("Network step 5: Building probes")
+    logger.debug("Network step 4: Building probes")
     for probe in network.probes:
         model.build(probe)
 

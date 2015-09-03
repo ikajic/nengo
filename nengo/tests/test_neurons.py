@@ -1,17 +1,14 @@
-import logging
 import numpy as np
 import pytest
 
 import nengo
 from nengo.neurons import NeuronTypeParam
-from nengo.processes import WhiteNoise
+from nengo.processes import WhiteSignal
 from nengo.solvers import LstsqL2nz
 from nengo.utils.ensemble import tuning_curves
 from nengo.utils.matplotlib import implot, rasterplot
 from nengo.utils.neurons import rates_kernel
 from nengo.utils.numpy import rms, rmse
-
-logger = logging.getLogger(__name__)
 
 
 def test_lif_builtin(rng):
@@ -39,7 +36,7 @@ def test_lif_builtin(rng):
     assert np.allclose(sim_rates, math_rates, atol=1, rtol=0.02)
 
 
-def test_lif(Simulator, plt, rng):
+def test_lif(Simulator, plt, rng, logger):
     """Test that the dynamic model approximately matches the rates"""
     dt = 0.001
     n = 5000
@@ -78,9 +75,9 @@ def test_lif(Simulator, plt, rng):
         x, *ens.neuron_type.gain_bias(max_rates, intercepts))
     spikes = sim.data[spike_probe]
     sim_rates = (spikes > 0).sum(0) / t_final
-    logger.debug("ME = %f", (sim_rates - math_rates).mean())
-    logger.debug("RMSE = %f",
-                 rms(sim_rates - math_rates) / (rms(math_rates) + 1e-20))
+    logger.info("ME = %f", (sim_rates - math_rates).mean())
+    logger.info("RMSE = %f",
+                rms(sim_rates - math_rates) / (rms(math_rates) + 1e-20))
     assert np.sum(math_rates > 0) > 0.5 * n, (
         "At least 50% of neurons must fire")
     assert np.allclose(sim_rates, math_rates, atol=1, rtol=0.02)
@@ -234,7 +231,7 @@ def test_izhikevich(Simulator, plt, seed, rng):
     simulated in Nengo (but doesn't test any properties of them).
     """
     with nengo.Network() as m:
-        u = nengo.Node(output=WhiteNoise(0.6, 8).f(d=1, rng=rng))
+        u = nengo.Node(output=WhiteSignal(0.6, 8), size_out=1)
 
         # Seed the ensembles (not network) so we get the same sort of neurons
         ens_args = {'n_neurons': 4, 'dimensions': 1, 'seed': seed}
@@ -259,7 +256,7 @@ def test_izhikevich(Simulator, plt, seed, rng):
             spikes[ens] = nengo.Probe(ens.neurons)
         up = nengo.Probe(u)
 
-    sim = Simulator(m)
+    sim = Simulator(m, seed=seed+1)
     sim.run(0.6)
     t = sim.trange()
 
@@ -285,7 +282,7 @@ def test_dt_dependence(Simulator, nl_nodirect, plt, seed, rng):
     """Neurons should not wildly change with different dt."""
     with nengo.Network(seed=seed) as m:
         m.config[nengo.Ensemble].neuron_type = nl_nodirect()
-        u = nengo.Node(output=WhiteNoise(0.1, 5).f(d=2, rng=rng))
+        u = nengo.Node(output=WhiteSignal(0.1, 5), size_out=2)
         pre = nengo.Ensemble(60, dimensions=2)
         square = nengo.Ensemble(60, dimensions=2)
         nengo.Connection(u, pre)
@@ -300,7 +297,7 @@ def test_dt_dependence(Simulator, nl_nodirect, plt, seed, rng):
     dts = (0.0001, 0.001)
     colors = ('b', 'g', 'r')
     for c, dt in zip(colors, dts):
-        sim = Simulator(m, dt=dt)
+        sim = Simulator(m, dt=dt, seed=seed+1)
         sim.run(0.1)
         t = sim.trange(dt=0.001)
         activity_data.append(sim.data[activity_p])
@@ -327,7 +324,7 @@ def test_reset(Simulator, nl_nodirect, seed, rng):
     m = nengo.Network(seed=seed)
     with m:
         m.config[nengo.Ensemble].neuron_type = nl_nodirect()
-        u = nengo.Node(output=WhiteNoise(0.15, 5).f(d=2, rng=rng))
+        u = nengo.Node(output=WhiteSignal(0.15, 5), size_out=2)
         ens = nengo.Ensemble(60, dimensions=2)
         square = nengo.Ensemble(60, dimensions=2)
         nengo.Connection(u, ens)
@@ -335,7 +332,7 @@ def test_reset(Simulator, nl_nodirect, seed, rng):
                          solver=LstsqL2nz(weights=True))
         square_p = nengo.Probe(square, synapse=0.1)
 
-    sim = Simulator(m)
+    sim = Simulator(m, seed=seed+1)
     sim.run(0.1)
     sim.run(0.2)
 
@@ -359,8 +356,3 @@ def test_neurontypeparam():
     assert isinstance(inst.ntp, nengo.LIF)
     with pytest.raises(ValueError):
         inst.ntp = 'a'
-
-
-if __name__ == "__main__":
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])

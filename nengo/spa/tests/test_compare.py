@@ -1,6 +1,3 @@
-import numpy as np
-import pytest
-
 import nengo
 from nengo import spa
 
@@ -12,12 +9,15 @@ def test_basic():
     inputA = model.get_module_input('compare_A')
     inputB = model.get_module_input('compare_B')
     output = model.get_module_output('compare')
+    # all nodes should be acquired correctly
     assert inputA[0] is model.compare.inputA
     assert inputB[0] is model.compare.inputB
     assert output[0] is model.compare.output
+    # all inputs should share the same vocab
     assert inputA[1] is inputB[1]
-    assert inputA[1] is output[1]
     assert inputA[1].dimensions == 16
+    # output should have no vocab
+    assert output[1] is None
 
 
 def test_run(Simulator, seed):
@@ -40,12 +40,5 @@ def test_run(Simulator, seed):
     sim = Simulator(model)
     sim.run(0.2)
 
-    data = np.dot(sim.data[p], vocab.parse('YES').v)
-
-    assert data[100] > 0.8
-    assert data[199] < 0.2
-
-
-if __name__ == '__main__':
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])
+    assert sim.data[p][100] > 0.8
+    assert sim.data[p][199] < 0.2

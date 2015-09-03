@@ -27,15 +27,20 @@ def full_transform(conn, slice_pre=True, slice_post=True, allow_scalars=True):
         If false, these scalars will be turned into scaled identity matrices.
     """
     transform = conn.transform
-    pre_slice = conn.pre_slice if slice_pre else slice(None)
+    pre_slice = (conn.pre_slice if slice_pre and conn.function is None else
+                 slice(None))
     post_slice = conn.post_slice if slice_post else slice(None)
 
-    if pre_slice == slice(None) and post_slice == slice(None):
+    eq_none_slice = lambda s: isinstance(s, slice) and s == slice(None)
+    if eq_none_slice(pre_slice) and eq_none_slice(post_slice):
         if transform.ndim == 2:
             # transform is already full, so return a copy
             return np.array(transform)
         elif transform.size == 1 and allow_scalars:
-            return np.array(transform)
+            if transform.ndim == 1:
+                return np.array(transform[0])
+            else:
+                return np.array(transform)
 
     # Create the new transform matching the pre/post dimensions
     func_size = conn.function_info.size

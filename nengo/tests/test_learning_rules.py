@@ -3,151 +3,138 @@ import pytest
 
 import nengo
 from nengo.learning_rules import LearningRuleTypeParam, PES, BCM, Oja
-from nengo.processes import WhiteNoise
-from nengo.solvers import LstsqL2nz
+from nengo.processes import WhiteSignal
 
 
-def test_pes_weights(Simulator, nl_nodirect, plt, seed, rng):
-    n = 200
-    learned_vector = [0.5, -0.5]
-    rate = 10e-6
+def _test_pes(Simulator, nl, plt, seed,
+              pre_neurons=False, post_neurons=False, weight_solver=False,
+              vin=np.array([0.5, -0.5]), vout=None, n=200,
+              function=None, transform=np.array(1.), rate=1e-3):
 
-    m = nengo.Network(seed=seed)
-    with m:
-        m.config[nengo.Ensemble].neuron_type = nl_nodirect()
-        u = nengo.Node(output=learned_vector)
-        a = nengo.Ensemble(n, dimensions=2)
-        u_learned = nengo.Ensemble(n, dimensions=2)
-        e = nengo.Ensemble(n, dimensions=2)
+    vout = np.array(vin) if vout is None else vout
 
-        initial_weights = rng.uniform(
-            high=1e-3,
-            size=(a.n_neurons, u_learned.n_neurons))
+    model = nengo.Network(seed=seed)
+    with model:
+        model.config[nengo.Ensemble].neuron_type = nl()
+
+        u = nengo.Node(output=vin)
+        v = nengo.Node(output=vout)
+        a = nengo.Ensemble(n, dimensions=u.size_out)
+        b = nengo.Ensemble(n, dimensions=u.size_out)
+        e = nengo.Ensemble(n, dimensions=v.size_out)
 
         nengo.Connection(u, a)
-        err_conn = nengo.Connection(e, u_learned, modulatory=True)
-        conn = nengo.Connection(a.neurons, u_learned.neurons,
-                                transform=initial_weights,
-                                learning_rule_type=PES(err_conn, rate))
 
-        nengo.Connection(u_learned, e, transform=-1)
-        nengo.Connection(u, e)
+        bslice = b[:v.size_out] if v.size_out < u.size_out else b
+        pre = a.neurons if pre_neurons else a
+        post = b.neurons if post_neurons else bslice
 
-        u_learned_p = nengo.Probe(u_learned, synapse=0.05)
-        e_p = nengo.Probe(e, synapse=0.05)
+        conn = nengo.Connection(pre, post,
+                                function=function, transform=transform,
+                                learning_rule_type=PES(rate))
+        if weight_solver:
+            conn.solver = nengo.solvers.LstsqL2(weights=True)
 
-        # test probing rule itself
-        se_p = nengo.Probe(conn.learning_rule, 'scaled_error', synapse=0.05)
+        nengo.Connection(v, e, transform=-1)
+        nengo.Connection(bslice, e)
+        nengo.Connection(e, conn.learning_rule)
 
-    sim = Simulator(m)
-    sim.run(1.)
+        b_p = nengo.Probe(bslice, synapse=0.03)
+        e_p = nengo.Probe(e, synapse=0.03)
+
+        weights_p = nengo.Probe(conn, 'weights', sample_every=0.01)
+        corr_p = nengo.Probe(conn.learning_rule, 'correction', synapse=0.03)
+
+    sim = Simulator(model)
+    sim.run(0.5)
     t = sim.trange()
+    weights = sim.data[weights_p]
 
     plt.subplot(311)
-    plt.plot(t, sim.data[u_learned_p])
+    plt.plot(t, sim.data[b_p])
     plt.ylabel("Post decoded value")
     plt.subplot(312)
     plt.plot(t, sim.data[e_p])
     plt.ylabel("Error decoded value")
     plt.subplot(313)
-    plt.plot(t, sim.data[se_p] / rate)
-    plt.ylabel("PES scaled error")
+    plt.plot(t, sim.data[corr_p] / rate)
+    plt.ylabel("PES correction")
     plt.xlabel("Time (s)")
 
-    tend = t > 0.9
-    assert np.allclose(sim.data[u_learned_p][tend], learned_vector, atol=0.05)
+    tend = t > 0.4
+    assert np.allclose(sim.data[b_p][tend], vout, atol=0.05)
     assert np.allclose(sim.data[e_p][tend], 0, atol=0.05)
-    assert np.allclose(sim.data[se_p][tend] / rate, 0, atol=0.05)
+    assert np.allclose(sim.data[corr_p][tend] / rate, 0, atol=0.05)
+    assert not np.allclose(weights[0], weights[-1], atol=1e-5)
 
 
-def test_pes_decoders(Simulator, nl_nodirect, seed, plt):
+def test_pes_ens_ens(Simulator, nl_nodirect, plt, seed):
+    function = lambda x: [x[1], x[0]]
+    _test_pes(Simulator, nl_nodirect, plt, seed, function=function)
+
+
+def test_pes_weight_solver(Simulator, plt, seed):
+    function = lambda x: [x[1], x[0]]
+    _test_pes(Simulator, nengo.LIF, plt, seed, function=function,
+              weight_solver=True)
+
+
+def test_pes_ens_slice(Simulator, plt, seed):
+    vin = [0.5, -0.5]
+    vout = [vin[0]**2 + vin[1]**2]
+    function = lambda x: [x[0] - x[1]]
+    _test_pes(Simulator, nengo.LIF, plt, seed, vin=vin, vout=vout,
+              function=function)
+
+
+def test_pes_neuron_neuron(Simulator, plt, seed, rng):
     n = 200
-    learned_vector = [0.5, -0.5]
+    initial_weights = rng.uniform(high=2e-4, size=(n, n))
+    _test_pes(Simulator, nengo.LIF, plt, seed,
+              pre_neurons=True, post_neurons=True,
+              n=n, transform=initial_weights)
+
+
+def test_pes_neuron_ens(Simulator, plt, seed, rng):
+    n = 200
+    initial_weights = rng.uniform(high=1e-4, size=(2, n))
+    _test_pes(Simulator, nengo.LIF, plt, seed,
+              pre_neurons=True, post_neurons=False,
+              n=n, transform=initial_weights)
+
+
+def test_pes_transform(Simulator, seed):
+    """Test behaviour of PES when function and transform both defined."""
+    n = 200
+    # error must be with respect to transformed vector (conn.size_out)
+    T = np.asarray([[0.5], [-0.5]])  # transform to output
 
     m = nengo.Network(seed=seed)
     with m:
-        m.config[nengo.Ensemble].neuron_type = nl_nodirect()
-        u = nengo.Node(output=learned_vector)
-        a = nengo.Ensemble(n, dimensions=2)
-        u_learned = nengo.Ensemble(n, dimensions=2)
-        e = nengo.Ensemble(n, dimensions=2)
+        u = nengo.Node(output=[1])
+        a = nengo.Ensemble(n, dimensions=1)
+        b = nengo.Node(size_in=2)
+        e = nengo.Node(size_in=1)
 
         nengo.Connection(u, a)
-        nengo.Connection(u_learned, e, transform=-1)
-        nengo.Connection(u, e)
-        e_c = nengo.Connection(e, u_learned, modulatory=True)
-        conn = nengo.Connection(a, u_learned, learning_rule_type=PES(e_c))
+        learned_conn = nengo.Connection(
+            a, b, function=lambda x: [0], transform=T,
+            learning_rule_type=nengo.PES(learning_rate=1e-3))
+        assert T.shape[0] == learned_conn.size_out
+        assert T.shape[1] == learned_conn.size_mid
 
-        u_learned_p = nengo.Probe(u_learned, synapse=0.1)
-        e_p = nengo.Probe(e, synapse=0.1)
-        dec_p = nengo.Probe(conn, 'decoders', sample_every=0.01)
+        nengo.Connection(b[0], e, synapse=None)
+        nengo.Connection(nengo.Node(output=-1), e)
+        nengo.Connection(
+            e, learned_conn.learning_rule, transform=T, synapse=None)
 
-    sim = Simulator(m)
-    sim.run(0.5)
-    t = sim.trange()
+        p_b = nengo.Probe(b, synapse=0.05)
 
-    plt.subplot(2, 1, 1)
-    plt.plot(t, sim.data[u_learned_p], label="Post")
-    plt.plot(t, sim.data[e_p], label="Error")
-    plt.legend(loc="best", fontsize="x-small")
-    plt.subplot(2, 1, 2)
-    plt.plot(sim.trange(dt=0.01), sim.data[dec_p][..., 0])
-    plt.title("Change in one 2D decoder")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Decoding weight")
+    sim = nengo.Simulator(m)
+    sim.run(1.0)
+    tend = sim.trange() > 0.7
 
-    tend = t > 0.4
-    assert np.allclose(sim.data[u_learned_p][tend], learned_vector, atol=0.05)
-    assert np.allclose(sim.data[e_p][tend], 0, atol=0.05)
-    assert not np.all(sim.data[dec_p][0] == sim.data[dec_p][-1])
-
-
-def test_pes_decoders_multidimensional(Simulator, seed, plt):
-    n = 200
-    input_vector = [0.5, -0.5]
-    learned_vector = [input_vector[0]**2 + input_vector[1]**2]
-
-    m = nengo.Network(seed=seed)
-    with m:
-        u = nengo.Node(output=input_vector)
-        v = nengo.Node(output=learned_vector)
-        a = nengo.Ensemble(n, dimensions=2)
-        u_learned = nengo.Ensemble(n, dimensions=1)
-        e = nengo.Ensemble(n, dimensions=1)
-
-        nengo.Connection(u, a)
-        err_conn = nengo.Connection(e, u_learned, modulatory=True)
-
-        # initial decoded function is x[0] - x[1]
-        conn = nengo.Connection(a, u_learned, function=lambda x: x[0] - x[1],
-                                learning_rule_type=PES(err_conn, 5e-6))
-
-        nengo.Connection(u_learned, e, transform=-1)
-
-        # learned function is sum of squares
-        nengo.Connection(v, e)
-
-        u_learned_p = nengo.Probe(u_learned, synapse=0.1)
-        e_p = nengo.Probe(e, synapse=0.1)
-        dec_p = nengo.Probe(conn, 'decoders', sample_every=0.01)
-
-    sim = Simulator(m)
-    sim.run(0.5)
-    t = sim.trange()
-
-    plt.subplot(2, 1, 1)
-    plt.plot(t, sim.data[u_learned_p], label="Post")
-    plt.plot(t, sim.data[e_p], label="Error")
-    plt.legend(loc="best", fontsize="x-small")
-    plt.subplot(2, 1, 2)
-    plt.plot(sim.trange(dt=0.01), sim.data[dec_p][..., 0])
-    plt.title("Change in one 1D decoder")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Decoding weight")
-
-    tend = t > 0.4
-    assert np.allclose(sim.data[u_learned_p][tend], learned_vector, atol=0.05)
-    assert np.allclose(sim.data[e_p][tend], 0, atol=0.05)
+    assert np.allclose(sim.data[p_b][tend], [1, -1], atol=1e-2)
 
 
 @pytest.mark.parametrize('learning_rule_type', [
@@ -159,25 +146,25 @@ def test_unsupervised(Simulator, learning_rule_type, seed, rng, plt):
 
     m = nengo.Network(seed=seed)
     with m:
-        u = nengo.Node(WhiteNoise(0.5, high=5).f(d=2, rng=rng))
+        u = nengo.Node(WhiteSignal(0.5, high=5), size_out=2)
         a = nengo.Ensemble(n, dimensions=2)
-        u_learned = nengo.Ensemble(n, dimensions=2)
+        b = nengo.Ensemble(n, dimensions=2)
 
         initial_weights = rng.uniform(
             high=1e-3,
-            size=(a.n_neurons, u_learned.n_neurons))
+            size=(a.n_neurons, b.n_neurons))
 
         nengo.Connection(u, a)
-        conn = nengo.Connection(a.neurons, u_learned.neurons,
+        conn = nengo.Connection(a.neurons, b.neurons,
                                 transform=initial_weights,
                                 learning_rule_type=learning_rule_type)
         inp_p = nengo.Probe(u)
-        trans_p = nengo.Probe(conn, 'transform', sample_every=0.01)
+        weights_p = nengo.Probe(conn, 'weights', sample_every=0.01)
 
         ap = nengo.Probe(a, synapse=0.03)
-        up = nengo.Probe(u_learned, synapse=0.03)
+        up = nengo.Probe(b, synapse=0.03)
 
-    sim = Simulator(m)
+    sim = Simulator(m, seed=seed+1)
     sim.run(0.5)
     t = sim.trange()
 
@@ -187,11 +174,11 @@ def test_unsupervised(Simulator, learning_rule_type, seed, rng, plt):
     plt.plot(t, sim.data[up], label="Post")
     plt.legend(loc="best", fontsize="x-small")
     plt.subplot(2, 1, 2)
-    plt.plot(sim.trange(dt=0.01), sim.data[trans_p][..., 4])
+    plt.plot(sim.trange(dt=0.01), sim.data[weights_p][..., 4])
     plt.xlabel("Time (s)")
-    plt.ylabel("Transform weight")
+    plt.ylabel("Weights")
 
-    assert not np.all(sim.data[trans_p][0] == sim.data[trans_p][-1])
+    assert not np.all(sim.data[weights_p][0] == sim.data[weights_p][-1])
 
 
 def learning_net(learning_rule, net, rng):
@@ -199,23 +186,20 @@ def learning_net(learning_rule, net, rng):
         u = nengo.Node(output=1.0)
         pre = nengo.Ensemble(10, dimensions=1)
         post = nengo.Ensemble(10, dimensions=1)
+        initial_weights = rng.uniform(high=1e-3,
+                                      size=(pre.n_neurons, post.n_neurons))
+        conn = nengo.Connection(pre.neurons, post.neurons,
+                                transform=initial_weights,
+                                learning_rule_type=learning_rule())
         if learning_rule is nengo.PES:
+            learning_rule.learning_rate = 1e-5
             err = nengo.Ensemble(10, dimensions=1)
-            # Always have error
             nengo.Connection(u, err)
-            err_conn = nengo.Connection(err, post, modulatory=True)
-            conn = nengo.Connection(pre, post,
-                                    learning_rule_type=learning_rule(err_conn),
-                                    solver=LstsqL2nz(weights=True))
-        else:
-            initial_weights = rng.uniform(high=1e-3,
-                                          size=(pre.n_neurons, post.n_neurons))
-            conn = nengo.Connection(pre.neurons, post.neurons,
-                                    transform=initial_weights,
-                                    learning_rule_type=learning_rule())
+            nengo.Connection(err, conn.learning_rule)
+
         activity_p = nengo.Probe(pre.neurons, synapse=0.01)
-        trans_p = nengo.Probe(conn, 'transform', synapse=.01, sample_every=.01)
-    return net, activity_p, trans_p
+        weights_p = nengo.Probe(conn, 'weights', synapse=.01, sample_every=.01)
+    return net, activity_p, weights_p
 
 
 @pytest.mark.parametrize('learning_rule', [nengo.PES, nengo.BCM, nengo.Oja])
@@ -245,7 +229,7 @@ def test_dt_dependence(Simulator, plt, learning_rule, seed, rng):
     plt.xlim(right=sim.trange()[-1])
     plt.ylabel("Presynaptic activity")
 
-    assert np.allclose(trans_data[0], trans_data[1], atol=2e-3)
+    assert np.allclose(trans_data[0], trans_data[1], atol=3e-3)
     assert not np.all(sim.data[trans_p][0] == sim.data[trans_p][-1])
 
 
@@ -309,13 +293,13 @@ def test_learningrule_attr(seed):
 
     with nengo.Network(seed=seed):
         a, b, e = [nengo.Ensemble(10, 2) for i in range(3)]
-        c = nengo.Connection(a, b, modulatory=True)  # dummy error connection
+        # nengo.Connection(e, b)  # dummy error connection
 
-        r1 = PES(c)
+        r1 = PES()
         c1 = nengo.Connection(a.neurons, b.neurons, learning_rule_type=r1)
         check_rule(c1.learning_rule, c1, r1)
 
-        r2 = [PES(c), BCM()]
+        r2 = [PES(), BCM()]
         c2 = nengo.Connection(a.neurons, b.neurons, learning_rule_type=r2)
         assert isinstance(c2.learning_rule, list)
         for rule, rule_type in zip(c2.learning_rule, r2):
@@ -327,8 +311,3 @@ def test_learningrule_attr(seed):
         assert set(c3.learning_rule) == set(r3)  # assert same keys
         for key in r3:
             check_rule(c3.learning_rule[key], c3, r3[key])
-
-
-if __name__ == "__main__":
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])

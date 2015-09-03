@@ -1,15 +1,16 @@
+from __future__ import print_function
+
 import errno
 import os
+import timeit
 
 import numpy as np
 from numpy.testing import assert_equal
 import pytest
 
 import nengo
-from nengo.cache import (
-    DecoderCache, Fingerprint, get_fragment_size, NoDecoderCache)
+from nengo.cache import DecoderCache, Fingerprint, get_fragment_size
 from nengo.utils.compat import int_types
-from nengo.utils.testing import Timer
 
 
 class SolverMock(object):
@@ -20,12 +21,13 @@ class SolverMock(object):
         self.__module__ = __name__
         self.__name__ = name
 
-    def __call__(self, A, Y, rng=np.random, E=None):
+    def __call__(self, solver, neuron_type, gain, bias, x, targets,
+                 rng=np.random, E=None):
         self.n_calls[self] += 1
         if E is None:
-            return np.random.rand(A.shape[1], Y.shape[1]), {'info': 'v'}
+            return np.random.rand(x.shape[1], targets.shape[1]), {'info': 'v'}
         else:
-            return np.random.rand(A.shape[1], E.shape[1]), {'info': 'v'}
+            return np.random.rand(x.shape[1], E.shape[1]), {'info': 'v'}
 
 
 def get_solver_test_args():
@@ -33,7 +35,11 @@ def get_solver_test_args():
     N = 10
     D = 2
     return {
-        'activities': np.ones((M, D)),
+        'solver': nengo.solvers.LstsqL2nz(),
+        'neuron_type': nengo.LIF(),
+        'gain': np.ones(N),
+        'bias': np.ones(N),
+        'x': np.ones((M, D)),
         'targets': np.ones((M, N)),
         'rng': np.random.RandomState(42),
     }
@@ -45,7 +51,11 @@ def get_weight_solver_test_args():
     N2 = 5
     D = 2
     return {
-        'activities': np.ones((M, D)),
+        'solver': nengo.solvers.LstsqL2nz(),
+        'neuron_type': nengo.LIF(),
+        'gain': np.ones(N),
+        'bias': np.ones(N),
+        'x': np.ones((M, D)),
         'targets': np.ones((M, N)),
         'rng': np.random.RandomState(42),
         'E': np.ones((D, N2)),
@@ -68,7 +78,7 @@ def test_decoder_cache(tmpdir):
     assert solver_info1 == solver_info2
 
     solver_args = get_solver_test_args()
-    solver_args['activities'] *= 2
+    solver_args['gain'] *= 2
     decoders3, solver_info3 = cache.wrap_solver(solver_mock)(**solver_args)
     assert SolverMock.n_calls[solver_mock] == 2
     assert np.any(decoders1 != decoders3)
@@ -264,28 +274,141 @@ def calc_relative_timer_diff(t1, t2):
     return (t2.duration - t1.duration) / (t2.duration + t1.duration)
 
 
-@pytest.mark.slow
-def test_cache_performance(tmpdir, Simulator, seed):
-    cache_dir = str(tmpdir)
+class TestCacheBenchmark(object):
+    n_trials = 25
 
-    model = nengo.Network(seed=seed)
-    with model:
-        nengo.Connection(nengo.Ensemble(2000, 10), nengo.Ensemble(2000, 10))
+    setup = '''
+import numpy as np
+import nengo
+import nengo.cache
+from nengo.rc import rc
 
-    with Timer() as t_no_cache:
-        Simulator(model, model=nengo.builder.Model(
-            dt=0.001, decoder_cache=NoDecoderCache()))
-    with Timer() as t_cache_miss:
-        Simulator(model, model=nengo.builder.Model(
-            dt=0.001, decoder_cache=DecoderCache(cache_dir=cache_dir)))
-    with Timer() as t_cache_hit:
-        Simulator(model, model=nengo.builder.Model(
-            dt=0.001, decoder_cache=DecoderCache(cache_dir=cache_dir)))
+model = nengo.Network(seed=1)
+with model:
+    a = nengo.Ensemble({N}, dimensions={D}, n_eval_points={M})
+    b = nengo.Ensemble({N}, dimensions={D}, n_eval_points={M})
+    conn = nengo.Connection(a, b)
+    '''
 
-    assert calc_relative_timer_diff(t_no_cache, t_cache_miss) < 0.1
-    assert calc_relative_timer_diff(t_cache_hit, t_no_cache) > 0.4
+    without_cache = {
+        'rc': 'rc.set("decoder_cache", "enabled", "False")',
+        'stmt': 'sim = nengo.Simulator(model)'
+    }
 
+    with_cache_miss_ro = {
+        'rc': '''
+rc.set("decoder_cache", "enabled", "True")
+rc.set("decoder_cache", "readonly", "True")
+''',
+        'stmt': '''
+nengo.cache.DecoderCache().invalidate()
+sim = nengo.Simulator(model)
+'''
+    }
 
-if __name__ == "__main__":
-    nengo.log(debug=True)
-    pytest.main([__file__, '-v'])
+    with_cache_miss = {
+        'rc': '''
+rc.set("decoder_cache", "enabled", "True")
+rc.set("decoder_cache", "readonly", "False")
+''',
+        'stmt': '''
+nengo.cache.DecoderCache().invalidate()
+sim = nengo.Simulator(model)
+'''
+    }
+
+    with_cache_hit = {
+        'rc': '''
+rc.set("decoder_cache", "enabled", "True")
+rc.set("decoder_cache", "readonly", "False")
+sim = nengo.Simulator(model)
+''',
+        'stmt': 'sim = nengo.Simulator(model)'
+    }
+
+    labels = ["no cache", "cache miss", "cache miss ro", "cache hit"]
+    keys = [l.replace(' ', '_') for l in labels]
+    param_to_axis_label = {
+        'D': "dimensions",
+        'N': "neurons",
+        'M': "evaluation points"
+    }
+    defaults = {'D': 1, 'N': 50, 'M': 1000}
+
+    def time_code(self, code, args):
+        return timeit.repeat(
+            stmt=code['stmt'], setup=self.setup.format(**args) + code['rc'],
+            number=1, repeat=self.n_trials)
+
+    def time_all(self, args):
+        return (self.time_code(self.without_cache, args),
+                self.time_code(self.with_cache_miss, args),
+                self.time_code(self.with_cache_miss_ro, args),
+                self.time_code(self.with_cache_hit, args))
+
+    def get_args(self, varying_param, value):
+        args = dict(self.defaults)  # make a copy
+        args[varying_param] = value
+        return args
+
+    @pytest.mark.slow
+    @pytest.mark.noassertions
+    @pytest.mark.parametrize('varying_param', ['D', 'N', 'M'])
+    def test_cache_benchmark(self, varying_param, analytics, plt):
+        varying = {
+            'D': np.asarray(np.linspace(1, 512, 10), dtype=int),
+            'N': np.asarray(np.linspace(10, 500, 8), dtype=int),
+            'M': np.asarray(np.linspace(750, 2500, 8), dtype=int)
+        }[varying_param]
+        axis_label = self.param_to_axis_label[varying_param]
+
+        times = [self.time_all(self.get_args(varying_param, v))
+                 for v in varying]
+
+        for i, data in enumerate(zip(*times)):
+            plt.plot(varying, np.median(data, axis=1), label=self.labels[i])
+            analytics.add_data(varying_param, varying, axis_label)
+            analytics.add_data(self.keys[i], data)
+
+        plt.xlabel("Number of %s" % axis_label)
+        plt.ylabel("Build time (s)")
+        plt.legend(loc='best')
+
+    @staticmethod
+    def reject_outliers(data):
+        med = np.median(data)
+        limits = 1.5 * (np.percentile(data, [25, 75]) - med) + med
+        return data[np.logical_and(data > limits[0], data < limits[1])]
+
+    @pytest.mark.compare
+    @pytest.mark.parametrize('varying_param', ['D', 'N', 'M'])
+    def test_compare_cache_benchmark(self, varying_param, analytics_data, plt):
+        stats = pytest.importorskip('scipy.stats')
+
+        d1, d2 = analytics_data
+        assert np.all(d1[varying_param] == d2[varying_param]), (
+            'Cannot compare different parametrizations')
+        axis_label = self.param_to_axis_label[varying_param]
+
+        print("Cache, varying {0}:".format(axis_label))
+        for label, key in zip(self.labels, self.keys):
+            clean_d1 = [self.reject_outliers(d) for d in d1[key]]
+            clean_d2 = [self.reject_outliers(d) for d in d2[key]]
+            diff = [np.median(b) - np.median(a)
+                    for a, b in zip(clean_d1, clean_d2)]
+
+            p_values = np.array([2. * stats.mannwhitneyu(a, b)[1]
+                                 for a, b in zip(clean_d1, clean_d2)])
+            overall_p = 1. - np.prod(1. - p_values)
+            if overall_p < .05:
+                print("  {label}: Significant change (p <= {p:.3f}). See plots"
+                      " for details.".format(
+                          label=label, p=np.ceil(overall_p * 1000.) / 1000.))
+            else:
+                print("  {label}: No significant change.".format(label=label))
+
+            plt.plot(d1[varying_param], diff, label=label)
+
+        plt.xlabel("Number of %s" % axis_label)
+        plt.ylabel("Difference in build time (s)")
+        plt.legend(loc='best')
