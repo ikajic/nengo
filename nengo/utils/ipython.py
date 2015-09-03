@@ -34,12 +34,6 @@ try:
         def read_nb(fp):
             return current.read(fp, 'json')
     else:
-<<<<<<< HEAD
-        from IPython import nbformat
-        from IPython.nbconvert import NotebookExporter
-        from IPython.nbformat import write as write_nb
-        from IPython.nbformat import NotebookNode
-=======
         if IPython.version_info[0] == 3:
             from IPython import nbformat
             from IPython.nbformat import write as write_nb
@@ -48,7 +42,6 @@ try:
             import nbformat
             from nbformat import write as write_nb
             from nbformat import NotebookNode
->>>>>>> origin/master
 
         def read_nb(fp):
             # Have to load as version 4 or running notebook fails
