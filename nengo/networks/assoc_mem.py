@@ -18,9 +18,9 @@ class AssociativeMemory(nengo.Network):
 
     Parameters
     ----------
-    input_vectors: list or numpy.array
+    input_vectors: array_like
         The list of vectors to be compared against.
-    output_vectors: list of numpy.array, optional
+    output_vectors: array_like, optional
         The list of vectors to be produced for each match. If
         not given, the associative memory will act like an auto-associative
         memory (cleanup memory).
@@ -29,9 +29,9 @@ class AssociativeMemory(nengo.Network):
         The number of neurons for each of the ensemble (where each ensemble
         represents each item in the input_vectors list)
 
-    threshold: float, list, optional
+    threshold: array_like, optional
         The association activation threshold.
-    input_scales: float, list, optional
+    input_scales: array_list, optional
         Scaling factor to apply on each of the input vectors. Note that it
         is possible to scale each vector independently.
 
@@ -63,10 +63,10 @@ class AssociativeMemory(nengo.Network):
 
         # Handle different vector list types
         if is_iterable(input_vectors):
-            input_vectors = np.matrix(input_vectors)
+            input_vectors = np.array(input_vectors, ndmin=2)
 
         if is_iterable(output_vectors):
-            output_vectors = np.matrix(output_vectors)
+            output_vectors = np.array(output_vectors, ndmin=2)
 
         # Fail if number of input items and number of output items don't
         # match
@@ -90,14 +90,15 @@ class AssociativeMemory(nengo.Network):
 
         # Handle scaling of each input vector
         if not is_iterable(input_scales):
-            input_scale = np.matrix([input_scales] * input_vectors.shape[0])
+            input_scales = np.array([input_scales] * input_vectors.shape[0],
+                                    ndmin=2)
         else:
-            input_scale = np.matrix(input_scale)
-        if input_scale.shape[1] != input_vectors.shape[0]:
+            input_scales = np.array(input_scales, ndmin=2)
+        if input_scales.shape[1] != input_vectors.shape[0]:
             raise ValueError(
                 'Number of input_scale values do not match number of input'
                 'vectors. Got: %d, expected %d.' %
-                (input_scale.shape[1], input_vectors.shape[0]))
+                (input_scales.shape[1], input_vectors.shape[0]))
 
         # Input and output nodes
         N = input_vectors.shape[0]
@@ -155,7 +156,7 @@ class AssociativeMemory(nengo.Network):
 
             nengo.Connection(self.input, self.elem_input, synapse=None,
                              transform=np.multiply(input_vectors,
-                                                   input_scale.T))
+                                                   input_scales.T))
 
             # Make each ensemble
             self.am_ensembles = []
@@ -192,23 +193,38 @@ class AssociativeMemory(nengo.Network):
             # Add the output connection to the output connection list
             self.out_conns.append(c)
 
+    """Function to add another input to the associative memory network.
+
+    Parameters
+    ----------
+    name: string
+        Name to use for the input node. This name will be used as the name of
+        attribute for the associative memory network.
+
+    input_vectors: array_like
+        The list of vectors to be compared against.
+    input_scales: array_list, optional
+        Scaling factor to apply on each of the input vectors. Note that it
+        is possible to scale each vector independently.
+    """
     @with_self
-    def add_input(self, name, input_vectors, input_scale=1.0):
+    def add_input(self, name, input_vectors, input_scales=1.0):
         # Handle different vocabulary types
         if is_iterable(input_vectors):
             input_vectors = np.matrix(input_vectors)
 
         # Handle possible different input_scale values for each
         # element in the associative memory
-        if not is_iterable(input_scale):
-            input_scale = np.matrix([input_scale] * input_vectors.shape[0])
+        if not is_iterable(input_scales):
+            input_scales = np.array([input_scales] * input_vectors.shape[0],
+                                    ndmin=2)
         else:
-            input_scale = np.matrix(input_scale)
-        if input_scale.shape[1] != input_vectors.shape[0]:
+            input_scales = np.array(input_scales, ndmin=2)
+        if input_scales.shape[1] != input_vectors.shape[0]:
             raise ValueError(
                 'Number of input_scale values do not match number of input '
                 'vectors. Got: %d, expected %d.' %
-                (input_scale.shape[1], input_vectors.shape[0]))
+                (input_scales.shape[1], input_vectors.shape[0]))
 
         input = nengo.Node(size_in=input_vectors.shape[1], label=name)
 
@@ -220,8 +236,19 @@ class AssociativeMemory(nengo.Network):
 
         nengo.Connection(input, self.elem_input,
                          synapse=None,
-                         transform=np.multiply(input_vectors, input_scale.T))
+                         transform=np.multiply(input_vectors, input_scales.T))
 
+    """Function to add another input to the associative memory network.
+
+    Parameters
+    ----------
+    name: string
+        Name to use for the output node. This name will be used as the name of
+        attribute for the associative memory network.
+
+    output_vectors: array_like
+        The list of vectors to be produced for each match.
+    """
     @with_self
     def add_output(self, name, output_vectors):
         # Handle different vector list types
@@ -246,6 +273,29 @@ class AssociativeMemory(nengo.Network):
         # Add the output connection to the output connection list
         self.out_conns.append(c)
 
+    """Function to add a default output vector to the associative memory
+    network. The default output vector is chosen if the input matches none of
+    the given input vectors.
+
+    Parameters
+    ----------
+    output_vector: array_like, optional
+        The vector to be produced if the input value matches none of vectors
+        in the input vector list.
+    output_name: string
+        The name of the input that the default output vector should be applied
+        to.
+
+    n_neurons: int
+        Number of neurons to use for the default output vector ensemble.
+    min_activation_value: float
+        Minimum activation value (i.e. threshold) to use to disable the default
+        output vector.
+
+    config: nengo.Config
+        Nengo config object to use when constructing the default output
+        vector ensemble.
+    """
     def add_default_output_vector(self, output_vector, output_name='output',
                                   n_neurons=50, min_activation_value=0.5,
                                   config=None):
@@ -293,6 +343,16 @@ class AssociativeMemory(nengo.Network):
                 nengo.Connection(self.inhibit, default_vector_ens,
                                  transform=-1.5, synapse=None)
 
+    """Function to add a winner-take-all (wta) network to the output of the
+    associative memory network.
+
+    Parameters
+    ----------
+    inhibit_scale: float
+        Mutual inhibition scaling factor to use in the WTA network connections.
+    inhibit_synapse: float
+        Mutual inhibition synapse value to use in the WTA network connections.
+    """
     @with_self
     def add_wta_network(self, inhibit_scale=1.5, inhibit_synapse=0.005):
         if not self._using_wta:
