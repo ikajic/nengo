@@ -21,6 +21,7 @@ _Simulator = nengo.simulator.Simulator
 _RefSimulator = nengo.simulator.Simulator
 _neuron_types = [Direct, LIF, LIFRate, RectifiedLinear, Sigmoid]
 
+
 def pytest_configure(config):
     global _Simulator, _RefSimulator, _neuron_types
 
