@@ -241,7 +241,7 @@ def pytest_runtest_setup(item):  # noqa: C901
 
     if 'Simulator' in item.fixturenames:
         for test, reason in _Simulator.unsupported:
-            if re.match(test, item.name):
+            if re.match(test, item.nodeid):
                 pytest.xfail(reason)
 
 
