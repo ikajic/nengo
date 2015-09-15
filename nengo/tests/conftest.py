@@ -215,9 +215,10 @@ def pytest_generate_tests(metafunc):
             "nl_nodirect", [n for n in _neuron_types if n is not Direct])
 
 
-def pytest_runtest_setup(item):
+def pytest_runtest_setup(item):  # noqa: C901
     if not hasattr(item, 'obj'):
         return
+
     for mark, option, message in [
             ('example', 'noexamples', "examples not requested"),
             ('slow', 'slow', "slow tests not requested")]:
@@ -225,7 +226,6 @@ def pytest_runtest_setup(item):
             pytest.skip(message)
 
     if getattr(item.obj, 'noassertions', None):
-        skip = True
         skipreasons = []
         for fixture_name, option, message in [
                 ('analytics', 'analytics', "analytics not requested"),
@@ -233,10 +233,10 @@ def pytest_runtest_setup(item):
                 ('logger', 'logs', "logs not requested")]:
             if fixture_name in item.fixturenames:
                 if item.config.getvalue(option):
-                    skip = False
+                    break
                 else:
                     skipreasons.append(message)
-        if skip:
+        else:
             pytest.skip(" and ".join(skipreasons))
 
     if 'Simulator' in item.fixturenames:
