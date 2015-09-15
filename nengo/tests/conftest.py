@@ -67,7 +67,7 @@ def recorder_dirname(request, name):
     elif not record:
         return None
 
-    simulator, nl = ReferenceSimulator, None
+    simulator, nl = _RefSimulator, None
     if 'Simulator' in request.funcargnames:
         simulator = request.getfuncargvalue('Simulator')
     if 'nl' in request.funcargnames:
