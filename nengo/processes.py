@@ -5,7 +5,7 @@ import numpy as np
 import nengo.utils.numpy as npext
 from nengo.dists import DistributionParam, Gaussian
 from nengo.params import (
-    BoolParam, IntParam, NdarrayParam, NumberParam, TupleParam,
+    BoolParam, EnumParam, IntParam, NdarrayParam, NumberParam, TupleParam,
     Parameter, FrozenObject)
 from nengo.synapses import LinearFilter, LinearFilterParam, Lowpass
 from nengo.utils.compat import range
@@ -413,11 +413,13 @@ class Pool2(Process):
     shape_out = TupleParam(length=3)
     size = IntParam(low=1)
     stride = IntParam(low=1)
+    kind = EnumParam(values=('avg', 'max'))
 
-    def __init__(self, shape_in, size, stride=None):
+    def __init__(self, shape_in, size, stride=None, kind='avg'):
         self.shape_in = shape_in
         self.size = size
         self.stride = stride if stride is not None else size
+        self.kind = kind
         if self.stride > self.size:
             raise ValueError("Stride (%d) must be <= size (%d)" %
                              (self.stride, self.size))
@@ -438,7 +440,7 @@ class Pool2(Process):
         c, nyi, nyj = self.shape_out
         s = self.size
         st = self.stride
-        pooltype = 'avg'
+        kind = self.kind
 
         def step_pool2(t, x):
             x = x.reshape(c, nxi, nxj)
@@ -450,15 +452,15 @@ class Pool2(Process):
                 for j in range(s):
                     xij = x[:, i::st, j::st]
                     ni, nj = xij.shape[-2:]
-                    if pooltype == 'max':
+                    if kind == 'max':
                         y[:, :ni, :nj] = np.maximum(y[:, :ni, :nj], xij)
-                    elif pooltype == 'avg':
+                    elif kind == 'avg':
                         y[:, :ni, :nj] += xij
                         n[:ni, :nj] += 1
                     else:
-                        raise NotImplementedError(pooltype)
+                        raise NotImplementedError(kind)
 
-            if pooltype == 'avg':
+            if kind == 'avg':
                 y /= n
 
             return y.ravel()
