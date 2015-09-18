@@ -133,6 +133,10 @@ Release History
   actions to be added after module has been initialized.
   (`#861 <https://github.com/nengo/nengo/issues/861>`_,
   `#862 <https://github.com/nengo/nengo/pull/862>`_)
+- Added the ``Voja`` (Vector Oja) learning rule type, which updates an
+  ensemble's encoders to fire selectively for its inputs. (see
+  ``examples/learning/learn_associations.ipynb``).
+  (`#727 <https://github.com/nengo/nengo/issues/727>`_)
 
 **Bug fixes**
 
