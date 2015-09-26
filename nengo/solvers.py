@@ -218,14 +218,15 @@ def randomized_svd(A, Y, sigma, rng=np.random,
     --------
     ``sklearn.utils.extmath.randomized_svd`` for details about the parameters.
     """
-    from sklearn.utils.extmath import randomized_svd
+    from sklearn.utils.extmath import randomized_svd as sklearn_randomized_svd
 
     Y, m, n, _, matrix_in = _format_system(A, Y)
     if min(m, n) <= n_components + n_oversamples:
         # more efficient to do a full SVD
         return svd(A, Y, sigma, rng=rng)
 
-    U, s, V = randomized_svd(A, n_components, random_state=rng, **kwargs)
+    U, s, V = sklearn_randomized_svd(
+        A, n_components, random_state=rng, **kwargs)
     si = s / (s**2 + m * sigma**2)
     X = np.dot(V.T, si[:, None] * np.dot(U.T, Y))
     info = {'rmses': npext.rms(Y - np.dot(A, X), axis=0)}
