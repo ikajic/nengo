@@ -200,7 +200,7 @@ def svd(A, Y, sigma, rng=None):
 
 
 def randomized_svd(A, Y, sigma, rng=np.random,
-                   n_components=50, n_oversamples=10, **kwargs):
+                   n_components=60, n_oversamples=10, **kwargs):
     """Solve the least-squares system using a randomized (partial) SVD.
 
     Parameters
