@@ -3,7 +3,7 @@ import warnings
 
 import numpy as np
 
-from nengo.builder.signal import SignalDict
+from nengo.builder.signal import Signal, SignalDict
 from nengo.cache import NoDecoderCache
 
 
@@ -25,7 +25,10 @@ class Model(object):
         self.params = {}
         self.seeds = {}
         self.probes = []
+
         self.sig = collections.defaultdict(dict)
+        self.sig['common'][0] = Signal(0.0, name='ZERO', readonly=True)
+        self.sig['common'][1] = Signal(1.0, name='ONE', readonly=True)
 
     def __str__(self):
         return "Model: %s" % self.label
