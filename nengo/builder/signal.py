@@ -8,7 +8,7 @@ from nengo.utils.compat import StringIO, is_integer
 
 
 class Signal(object):
-    """Interpretable, vector-valued quantity within Nengo"""
+    """Represents data or views onto data within Nengo"""
 
     # Set assert_named_signals True to raise an Exception
     # if model.signal is used to create a signal with no name.
