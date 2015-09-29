@@ -23,6 +23,7 @@ class Signal(object):
         self._value.setflags(write=False)
 
         if base is not None:
+            assert not base.is_view
             if base.value.base is None:
                 assert value.base is base.value
             else:
@@ -47,8 +48,16 @@ class Signal(object):
         return self.value.dtype
 
     @property
+    def elemstrides(self):
+        return tuple(s / self.itemsize for s in self.value.strides)
+
+    @property
     def is_view(self):
         return self._base is not None
+
+    @property
+    def itemsize(self):
+        return self._value.itemsize
 
     @property
     def name(self):
@@ -61,6 +70,10 @@ class Signal(object):
     @property
     def ndim(self):
         return self.value.ndim
+
+    @property
+    def offset(self):
+        return npext.array_offset(self.value) / self.itemsize
 
     @property
     def readonly(self):
@@ -96,12 +109,12 @@ class Signal(object):
 
         return Signal(self._value[item],
                       name="%s[%s]" % (self.name, item),
-                      base=self)
+                      base=self.base)
 
     def reshape(self, *shape):
         return Signal(self._value.reshape(*shape),
                       name="%s.reshape(%s)" % (self.name, shape),
-                      base=self)
+                      base=self.base)
 
     def shares_memory_with(self, other):
         return np.may_share_memory(self.value, other.value)
