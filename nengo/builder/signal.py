@@ -18,8 +18,7 @@ class Signal(object):
     assert_named_signals = False
 
     def __init__(self, value, name=None, base=None, readonly=False):
-        # Make sure we use a C-contiguous array
-        self._value = np.array(value, copy=(base is None), order='C').view()
+        self._value = np.asarray(value).view()
         self._value.setflags(write=False)
 
         if base is not None:
@@ -64,8 +63,8 @@ class Signal(object):
         return self._name if self._name is not None else ("0x%x" % id(self))
 
     @name.setter
-    def name(self, value):
-        self._name = value
+    def name(self, name):
+        self._name = name
 
     @property
     def ndim(self):
@@ -78,6 +77,10 @@ class Signal(object):
     @property
     def readonly(self):
         return self._readonly
+
+    @readonly.setter
+    def readonly(self, readonly):
+        self._readonly = bool(readonly)
 
     @property
     def shape(self):
@@ -164,7 +167,8 @@ class SignalDict(dict):
             view.setflags(write=not signal.readonly)
             dict.__setitem__(self, signal, view)
         else:
-            val = npext.array(signal.value, readonly=signal.readonly)
+            val = signal.value
+            val = val.view() if signal.readonly else val.copy()
             dict.__setitem__(self, signal, val)
 
     def reset(self, signal):

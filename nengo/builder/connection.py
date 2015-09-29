@@ -2,7 +2,6 @@ import collections
 
 import numpy as np
 
-import nengo.utils.numpy as npext
 from nengo.builder.builder import Builder
 from nengo.builder.ensemble import gen_eval_points, get_activities
 from nengo.builder.node import SimPyFunc
@@ -26,8 +25,9 @@ class ZeroActivityError(RuntimeError):
 
 def get_eval_points(model, conn, rng):
     if conn.eval_points is None:
-        return npext.array(
-            model.params[conn.pre_obj].eval_points, min_dims=2)
+        view = model.params[conn.pre_obj].eval_points.view()
+        view.setflags(write=False)
+        return view
     else:
         return gen_eval_points(
             conn.pre_obj, conn.eval_points, rng, conn.scale_eval_points)
@@ -193,7 +193,8 @@ def build_connection(model, conn):
     if conn.learning_rule is not None and weights.ndim < 2:
         raise ValueError("Learning connection must have full transform matrix")
 
-    model.sig[conn]['weights'] = Signal(weights, name="%s.weights" % conn)
+    model.sig[conn]['weights'] = Signal(
+        weights, name="%s.weights" % conn, readonly=True)
     signal = Signal(np.zeros(signal_size), name="%s.weighted" % conn)
     model.add_op(Reset(signal))
     op = ElementwiseInc if weights.ndim < 2 else DotInc
@@ -213,6 +214,7 @@ def build_connection(model, conn):
 
     # Build learning rules
     if conn.learning_rule is not None:
+        model.sig[conn]['weights'].readonly = False
         model.add_op(PreserveValue(model.sig[conn]['weights']))
 
         rule = conn.learning_rule
