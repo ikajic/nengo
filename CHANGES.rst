@@ -59,7 +59,8 @@ Release History
   (`#702 <https://github.com/nengo/nengo/pull/702>`_)
 - The ``Product`` and ``InputGatedMemory`` networks no longer accept a
   ``config`` argument. (`#814 <https://github.com/nengo/nengo/pull/814>`_)
-- Add ``close`` method to ``Simulator``.
+- Add ``close`` method to ``Simulator`` and allow to use it as a context
+  manager.
   (`#857 <https://github.com/nengo/nengo/issues/857`_,
   `#739 <https://github.com/nengo/nengo/issues/739>`_,
   `#859 <https://github.com/nengo/nengo/pull/859>`_)
