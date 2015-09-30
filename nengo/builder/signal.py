@@ -116,7 +116,7 @@ class Signal(object):
                       name="%s.reshape(%s)" % (self.name, shape),
                       base=self.base)
 
-    def shares_memory_with(self, other):
+    def may_share_memory(self, other):
         return np.may_share_memory(self.value, other.value)
 
 
