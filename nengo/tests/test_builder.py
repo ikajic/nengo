@@ -241,7 +241,8 @@ def test_signal_slicing(rng):
     b = Signal(y.copy())
 
     for i in range(100):
-        s0, s1 = rng.choice(slices), rng.choice(slices)
+        si0, si1 = rng.randint(0, len(slices), size=2)
+        s0, s1 = slices[si0], slices[si1]
         assert np.array_equiv(a[s0].value, x[s0])
         assert np.array_equiv(b[s0, s1].value, y[s0, s1])
 

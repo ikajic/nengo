@@ -24,10 +24,8 @@ class Signal(object):
 
         if base is not None:
             assert not base.is_view
-            if base.value.base is None:
-                assert value.base is base.value
-            else:
-                assert value.base is base.value.base
+            # make sure value uses the same data as base.value
+            assert npext.array_base(value) is npext.array_base(base.value)
         self._base = base
 
         if self.assert_named_signals:

@@ -39,12 +39,24 @@ def array(x, dims=None, min_dims=0, readonly=False, **kwargs):
     return y
 
 
+def array_base(x):
+    """Get base array (that is NOT a view) for x.
+
+    In Numpy >= 1.7, this is simply ``x.base``. However, in Numpy <= 1.6,
+    we need to loop back through the bases, since bases can be views.
+    """
+    while x.base is not None:
+        x = x.base
+    return x
+
+
 def array_offset(x):
-    """Get offset of array data from base data in bytes"""
+    """Get offset of array data from base data in bytes."""
     if x.base is None:
         return 0
 
-    base_start = x.base.__array_interface__['data'][0]
+    base = array_base(x)
+    base_start = base.__array_interface__['data'][0]
     start = x.__array_interface__['data'][0]
     return start - base_start
 
