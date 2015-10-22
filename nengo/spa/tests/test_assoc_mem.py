@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import nengo
 from nengo.spa import Vocabulary
@@ -14,6 +15,11 @@ def test_am_basic(Simulator, plt, seed, rng):
 
     D = 64
     vocab = Vocabulary(D, rng=rng)
+
+    with pytest.raises(ValueError):
+        with nengo.Network('model_error', seed=seed):
+            am = AssociativeMemory(vocab)
+
     vocab.parse('A+B+C+D')
 
     with nengo.Network('model', seed=seed) as m:

@@ -75,9 +75,12 @@ class AssociativeMemory(nengo.Network):
         if is_iterable(output_vectors):
             output_vectors = np.matrix(output_vectors)
 
-        # Fail if number of input items and number of output items don't
-        # match
-        if input_vectors.shape[0] != output_vectors.shape[0]:
+        if input_vectors.shape[0] <= 0:
+            # Fail if number of input items <= 0
+            raise ValueError('Number of input vectors cannot be <= 0.')
+        elif input_vectors.shape[0] != output_vectors.shape[0]:
+            # Fail if number of input items and number of output items don't
+            # match
             raise ValueError(
                 'Number of input vectors does not match number of output '
                 'vectors. %d != %d'
